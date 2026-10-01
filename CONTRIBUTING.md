@@ -15,6 +15,21 @@ Go 1.27.1 or later is required. If you touch a parser, run `make fuzz` for a whi
 - New device behaviour needs a test. The fakes in `fakes_test.go` simulate whole servers; add a scenario to `run_test.go` or `edge_test.go`. Timing rules belong in `synctest_test.go`, which runs on a fake clock.
 - If you change the report, regenerate the examples with `make examples` and update `docs/report.md`.
 
+## Signed commits
+
+Every commit on `main` should show as Verified on GitHub.
+
+- Changes reach `main` through pull requests merged with **Squash and merge**, which GitHub signs. Merge commits and rebase merges are disabled, because they would bring unsigned branch commits onto `main`.
+- If you push directly, sign your commits. With an SSH key:
+
+  ```sh
+  git config --global gpg.format ssh
+  git config --global user.signingkey ~/.ssh/id_ed25519.pub
+  git config --global commit.gpgsign true
+  ```
+
+  Add the same public key on GitHub under Settings → SSH and GPG keys as a **Signing Key**, and commit with an email address that is verified on your account (the `@users.noreply.github.com` address works).
+
 ## Hardware reports
 
 Results from real drives are the most useful contribution. Please open an issue that includes:
