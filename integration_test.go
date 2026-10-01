@@ -15,12 +15,15 @@ package cryptoerase
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/rayy3535/cryptoerase/blockdev"
@@ -137,6 +140,34 @@ func TestIntegrationInventoryOnHost(t *testing.T) {
 		}
 		if d.DeviceStatus != nil || d.Verification != nil {
 			t.Errorf("%s: inventory mode touched the device", d.Device)
+		}
+	}
+
+	// The disk holding / must never be planned for erase.
+	var st syscall.Stat_t
+	must(t, syscall.Stat("/", &st))
+	major := (st.Dev>>8)&0xfff | (st.Dev>>32)&^0xfff
+	minor := st.Dev&0xff | (st.Dev>>12)&^0xff
+	if major == 0 {
+		t.Logf("/ is not on a block device (%d:%d)", major, minor)
+		return
+	}
+	real, err := filepath.EvalSymlinks(fmt.Sprintf("/sys/dev/block/%d:%d", major, minor))
+	if err != nil {
+		t.Logf("/ device %d:%d not in sysfs: %v", major, minor, err)
+		return
+	}
+	r := &runner{opts: Options{SysfsRoot: "/sys"}}
+	bases := r.resolveBase(filepath.Base(real), 0)
+	t.Logf("/ is on %v", bases)
+	for _, d := range rep.Drives {
+		for _, b := range bases {
+			name := filepath.Base(d.Device)
+			if name == b || slices.Contains(d.Namespaces, "/dev/"+b) {
+				if d.Result != Unhandled || !strings.Contains(d.Reason, "in use") {
+					t.Errorf("%s holds / but is %s %q", d.Device, d.Result, d.Reason)
+				}
+			}
 		}
 	}
 }

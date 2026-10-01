@@ -141,6 +141,24 @@ func (r *runner) computeInUse() map[string]bool {
 		}
 		fh.Close()
 	}
+	// Mount sources are not always usable /dev paths: the kernel shows the
+	// root filesystem as /dev/root, and device-mapper nodes can be renamed.
+	// mountinfo carries each mount's device number, which sysfs resolves.
+	if fh, err := os.Open(filepath.Join(r.opts.ProcRoot, "self", "mountinfo")); err == nil {
+		sc := bufio.NewScanner(fh)
+		for sc.Scan() {
+			f := strings.Fields(sc.Text())
+			if len(f) < 3 || strings.HasPrefix(f[2], "0:") { // 0:N = no block device (tmpfs, overlay ...)
+				continue
+			}
+			if real, err := filepath.EvalSymlinks(filepath.Join(r.opts.SysfsRoot, "dev", "block", f[2])); err == nil {
+				for _, b := range r.resolveBase(filepath.Base(real), 0) {
+					set[b] = true
+				}
+			}
+		}
+		fh.Close()
+	}
 	return set
 }
 
