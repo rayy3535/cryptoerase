@@ -1,9 +1,16 @@
-# cryptoerase
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-wordmark-dark.svg">
+    <img alt="cryptoerase" src="docs/assets/logo-wordmark-light.svg" width="440">
+  </picture>
+</h1>
 
-[![ci](https://github.com/rayy3535/cryptoerase/actions/workflows/ci.yml/badge.svg)](https://github.com/rayy3535/cryptoerase/actions/workflows/ci.yml)
-[![codeql](https://github.com/rayy3535/cryptoerase/actions/workflows/codeql.yml/badge.svg)](https://github.com/rayy3535/cryptoerase/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/rayy3535/cryptoerase/badge)](https://scorecard.dev/viewer/?uri=github.com/rayy3535/cryptoerase)
-[![Go Reference](https://pkg.go.dev/badge/github.com/rayy3535/cryptoerase.svg)](https://pkg.go.dev/github.com/rayy3535/cryptoerase)
+<p align="center">
+  <a href="https://github.com/rayy3535/cryptoerase/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/rayy3535/cryptoerase/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/rayy3535/cryptoerase/actions/workflows/codeql.yml"><img alt="codeql" src="https://github.com/rayy3535/cryptoerase/actions/workflows/codeql.yml/badge.svg"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/rayy3535/cryptoerase"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/rayy3535/cryptoerase/badge"></a>
+  <a href="https://pkg.go.dev/github.com/rayy3535/cryptoerase"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/rayy3535/cryptoerase.svg"></a>
+</p>
 
 Cryptographic erase for the NVMe and SATA SSDs in a Linux server, with a JSON evidence report per run. Useful wherever servers pass from one user to the next (bare-metal hosting, hardware refresh and resale, lab fleets) and you need to show, drive by drive, how the previous data was destroyed.
 
