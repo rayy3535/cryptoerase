@@ -99,6 +99,7 @@ func TestIntegrationMarkersOnLoop(t *testing.T) {
 
 	m, err := r.writeMarkers(dev)
 	must(t, err)
+	defer m.release()
 	if len(m.offsets) != 16 || m.offsets[15] != 63<<20 {
 		t.Fatalf("offsets %v", m.offsets)
 	}

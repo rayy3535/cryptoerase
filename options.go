@@ -103,9 +103,11 @@ type Options struct {
 	// Backends. Nil selects the Linux implementations.
 	OpenNVMe    func(path string) (nvme.Device, error)
 	NamespaceID func(blockDev string) (uint32, error)
-	OpenBlock   func(path string, direct bool) (blockdev.Device, error)
-	ATA         ata.Backend
-	PERC        PERCLister
+	// OpenBlock opens a block device for the markers: read-write (write)
+	// to place them before the erase, read-only to check them afterwards.
+	OpenBlock func(path string, direct, write bool) (blockdev.Device, error)
+	ATA       ata.Backend
+	PERC      PERCLister
 }
 
 // ErrNotConfirmed is returned when ModeErase is requested without Confirm.
@@ -159,7 +161,12 @@ func (o *Options) withDefaults() (Options, error) {
 		v.NamespaceID = nvme.NamespaceID
 	}
 	if v.OpenBlock == nil {
-		v.OpenBlock = func(p string, direct bool) (blockdev.Device, error) { return blockdev.Open(p, direct) }
+		v.OpenBlock = func(p string, direct, write bool) (blockdev.Device, error) {
+			if write {
+				return blockdev.Open(p, direct)
+			}
+			return blockdev.OpenReadOnly(p, direct)
+		}
 	}
 	if v.ATA == nil {
 		v.ATA = &ata.Hdparm{}

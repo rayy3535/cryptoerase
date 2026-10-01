@@ -22,6 +22,20 @@ var (
 type markers struct {
 	offsets []int64
 	sums    [][32]byte
+	// dev is the read-write handle the markers were written through. It
+	// stays open until the erase has finished: closing a block device that
+	// was open for writing makes udev re-read its partition table, and a
+	// drive that is sanitizing rejects that read, which the kernel logs as
+	// I/O errors.
+	dev blockdev.Device
+}
+
+// release closes the write handle. Call it once the erase has finished.
+func (m *markers) release() {
+	if m != nil && m.dev != nil {
+		_ = m.dev.Close()
+		m.dev = nil
+	}
 }
 
 type verifyResult struct {
@@ -67,13 +81,18 @@ func (r *runner) buffer() ([]byte, func(), error) {
 	return blockdev.Buffer(chunk)
 }
 
-// writeMarkers writes random 1 MiB markers and reads each one back.
-func (r *runner) writeMarkers(path string) (*markers, error) {
-	dev, err := r.opts.OpenBlock(path, !r.opts.DisableDirectIO)
+// writeMarkers writes random 1 MiB markers and reads each one back. On
+// success the device stays open; the caller must call release.
+func (r *runner) writeMarkers(path string) (_ *markers, err error) {
+	dev, err := r.opts.OpenBlock(path, !r.opts.DisableDirectIO, true)
 	if err != nil {
 		return nil, fmt.Errorf("%w: open %s: %w", errMarkerWrite, path, err)
 	}
-	defer dev.Close()
+	defer func() {
+		if err != nil {
+			_ = dev.Close()
+		}
+	}()
 	size, err := dev.Size()
 	if err != nil {
 		return nil, fmt.Errorf("%w: size of %s: %w", errMarkerWrite, path, err)
@@ -92,7 +111,7 @@ func (r *runner) writeMarkers(path string) (*markers, error) {
 		return nil, err
 	}
 	defer release2()
-	m := &markers{}
+	m := &markers{dev: dev}
 	for _, off := range offs {
 		if _, err := rand.Read(buf); err != nil {
 			return nil, err
@@ -116,10 +135,11 @@ func (r *runner) writeMarkers(path string) (*markers, error) {
 	return m, nil
 }
 
-// verifyMarkers reads every marker back after the erase.
+// verifyMarkers reads every marker back after the erase, through a new
+// read-only handle.
 func (r *runner) verifyMarkers(path string, m *markers) (verifyResult, error) {
 	res := verifyResult{}
-	dev, err := r.opts.OpenBlock(path, !r.opts.DisableDirectIO)
+	dev, err := r.opts.OpenBlock(path, !r.opts.DisableDirectIO, false)
 	if err != nil {
 		res.total, res.unreadable = len(m.offsets), len(m.offsets)
 		return res, err

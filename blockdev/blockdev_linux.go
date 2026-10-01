@@ -35,8 +35,21 @@ type File struct {
 // Open opens path read-write. With direct=true it uses O_DIRECT, so every
 // buffer, offset and length must be aligned to the logical block size; use
 // Buffer for allocation.
+//
+// Closing a block device that was open for writing makes udev re-read it
+// (its partition table and filesystem signatures). Use OpenReadOnly when
+// nothing is written.
 func Open(path string, direct bool) (*File, error) {
-	flags := os.O_RDWR
+	return open(path, os.O_RDWR, direct)
+}
+
+// OpenReadOnly opens path for reading only, so closing it does not make udev
+// probe the device. WriteAt fails.
+func OpenReadOnly(path string, direct bool) (*File, error) {
+	return open(path, os.O_RDONLY, direct)
+}
+
+func open(path string, flags int, direct bool) (*File, error) {
 	if direct {
 		flags |= syscall.O_DIRECT
 	}
