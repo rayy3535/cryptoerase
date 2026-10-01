@@ -216,7 +216,7 @@ CI runs all of this on linux/amd64 and linux/arm64 for every push and pull reque
 ### Releasing
 
 1. Set `Version` in `options.go` and turn `## vX.Y.Z (unreleased)` in `CHANGELOG.md` into `## vX.Y.Z (YYYY-MM-DD)`.
-2. Merge, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+2. Merge, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`. Or, in the web UI, draft a new release with a new tag `vX.Y.Z` on that commit and publish it; for a tag like `vX.Y.Z-rc.1`, also tick "Set as a pre-release".
 3. The release workflow checks that the tag, `Version` and the changelog agree, runs lint and tests, builds both binaries, attests their provenance, and publishes the GitHub release with the changelog section as notes.
 
 Hardware reports are very welcome. Please include the drive model, firmware and the `--inventory` report; see [CONTRIBUTING.md](CONTRIBUTING.md).
