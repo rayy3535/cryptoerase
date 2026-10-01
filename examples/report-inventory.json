@@ -12,7 +12,7 @@
   "tool": {
     "name": "cryptoerase",
     "version": "0.1.0",
-    "go_version": "go1.22",
+    "go_version": "go1.27.1",
     "nvme_transport": "Linux NVME_IOCTL_ADMIN_CMD",
     "ata_backend": "hdparm v9.65"
   },

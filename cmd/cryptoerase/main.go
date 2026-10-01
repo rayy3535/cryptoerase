@@ -24,6 +24,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -38,7 +40,39 @@ type stringList []string
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
+// runErase is the library entry point; tests replace it.
+var runErase = cryptoerase.Run
+
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+
+// versionString reports the library version plus whatever the Go toolchain
+// recorded about the build (VCS revision, dirty flag, toolchain, platform).
+func versionString() string {
+	s := "cryptoerase " + cryptoerase.Version
+	var extra []string
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		var rev, modified string
+		for _, kv := range bi.Settings {
+			switch kv.Key {
+			case "vcs.revision":
+				rev = kv.Value
+			case "vcs.modified":
+				modified = kv.Value
+			}
+		}
+		if rev != "" {
+			if len(rev) > 12 {
+				rev = rev[:12]
+			}
+			if modified == "true" {
+				rev += "-dirty"
+			}
+			extra = append(extra, "rev "+rev)
+		}
+	}
+	extra = append(extra, runtime.Version(), runtime.GOOS+"/"+runtime.GOARCH)
+	return s + " (" + strings.Join(extra, ", ") + ")"
+}
 
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("cryptoerase", flag.ContinueOnError)
@@ -72,7 +106,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if *showVersion {
-		fmt.Fprintln(stdout, "cryptoerase", cryptoerase.Version)
+		fmt.Fprintln(stdout, versionString())
 		return 0
 	}
 	if fs.NArg() > 0 {
@@ -80,9 +114,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	var handler slog.Handler = slog.NewTextHandler(stderr, nil)
-	if *logFormat == "json" {
+	if *inventory && *yes {
+		fmt.Fprintln(stderr, "--inventory and --yes are mutually exclusive")
+		return 1
+	}
+	var handler slog.Handler
+	switch *logFormat {
+	case "text":
+		handler = slog.NewTextHandler(stderr, nil)
+	case "json":
 		handler = slog.NewJSONHandler(stderr, nil)
+	default:
+		fmt.Fprintf(stderr, "--log-format must be text or json, not %q\n", *logFormat)
+		return 1
 	}
 	logger := slog.New(handler)
 
@@ -120,7 +164,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	rep, err := cryptoerase.Run(ctx, opts)
+	rep, err := runErase(ctx, opts)
 	if err != nil {
 		if errors.Is(err, cryptoerase.ErrNotConfirmed) {
 			logger.Error("refusing to erase without --yes (use --inventory to only detect)")

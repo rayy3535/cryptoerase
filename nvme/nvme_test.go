@@ -85,7 +85,7 @@ func TestIdentifyNamespaceAndFormatSpec(t *testing.T) {
 	b[25] = 18   // 19 formats
 	b[26] = 0x32 // lbaf low=2, metadata extended, upper bits 01 -> index 0x12
 	b[29] = 0x09 // PI type 1, PI first
-	for i := 0; i < 19; i++ {
+	for i := range 19 {
 		b[128+4*i+2] = 12
 	}
 	ns, err := ParseIdentifyNamespace(b)

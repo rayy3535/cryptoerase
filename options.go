@@ -122,6 +122,9 @@ func (o *Options) withDefaults() (Options, error) {
 	if v.Samples < 2 {
 		return v, errors.New("cryptoerase: Samples must be >= 2")
 	}
+	if v.PollInterval < 0 || v.NoProgressTimeout < 0 || v.FormatTimeout < 0 || v.NodeWait < 0 {
+		return v, errors.New("cryptoerase: durations must not be negative")
+	}
 	if v.FirmwarePolicy == nil {
 		v.FirmwarePolicy = DefaultFirmwarePolicy()
 	}
