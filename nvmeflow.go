@@ -192,7 +192,7 @@ func (r *runner) nvmeDrive(ctx context.Context, c nvmeCtrl) *DriveRecord {
 	for _, ns := range c.namespaces {
 		path := r.devPath(ns)
 		if !r.waitNode(ctx, path) {
-			return r.done(rec, Fail, fmt.Sprintf("%s did not reappear after erase", ns))
+			return r.done(rec, Fail, ns+" did not reappear after erase")
 		}
 		res, err := r.verifyMarkers(path, marks[ns])
 		if err != nil {

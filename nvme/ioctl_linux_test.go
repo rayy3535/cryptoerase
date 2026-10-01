@@ -7,6 +7,7 @@ package nvme
 import (
 	"encoding/binary"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -197,6 +198,49 @@ func TestOpenControllerAndNamespaceIDOnRegularFile(t *testing.T) {
 	}
 	if _, err := NamespaceID(filepath.Join(t.TempDir(), "missing")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("NamespaceID missing: %v", err)
+	}
+}
+
+func TestMsTimeoutSaturates(t *testing.T) {
+	for d, want := range map[time.Duration]uint32{
+		-time.Second:            0,
+		0:                       0,
+		1500 * time.Microsecond: 1,
+		10 * time.Minute:        600000,
+		49 * 24 * time.Hour:     4233600000,
+		50 * 24 * time.Hour:     math.MaxUint32, // would wrap to ~25 s without saturation
+		1 << 62:                 math.MaxUint32,
+	} {
+		if got := msTimeout(d); got != want {
+			t.Errorf("%s: %d, want %d", d, got, want)
+		}
+	}
+	c, log := fakeController(t, nil)
+	if err := c.Format(1, FormatSpec{SES: SESCryptoErase}, 60*24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*log)[0].cmd.TimeoutMs; got != math.MaxUint32 {
+		t.Fatalf("format timeout %d", got)
+	}
+}
+
+func TestStatusMaskedTo16Bits(t *testing.T) {
+	c, _ := fakeController(t, func(*passthruCmd, []byte) (uintptr, syscall.Errno) { return 0xabcd0002, 0 })
+	var se *StatusError
+	if err := c.Sanitize(SanitizeCryptoErase, true); !errors.As(err, &se) || se.Status != 0x0002 {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestSecurityReceiveRejectsBadSize(t *testing.T) {
+	c, log := fakeController(t, nil)
+	for _, n := range []int{0, -1} {
+		if _, err := c.SecurityReceive(1, 1, n); err == nil {
+			t.Errorf("size %d accepted", n)
+		}
+	}
+	if len(*log) != 0 {
+		t.Fatal("a command was sent")
 	}
 }
 

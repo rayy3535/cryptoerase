@@ -70,7 +70,8 @@ func (d *File) Size() (int64, error) {
 		return st.Size(), nil
 	}
 	var size uint64
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlBLKGETSIZE64, uintptr(unsafe.Pointer(&size)))
+	// G103: BLKGETSIZE64 writes the size through a *uint64.
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), ioctlBLKGETSIZE64, uintptr(unsafe.Pointer(&size))) //nolint:gosec // G103, see above
 	if errno != 0 {
 		return 0, fmt.Errorf("BLKGETSIZE64 %s: %w", d.f.Name(), errno)
 	}

@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -110,7 +111,7 @@ func (h *testHost) addNVMe(ctrl string, s nvmeSpec) *fakeNVMe {
 		classEntry = strings.Replace(ns, "n1", "c"+strings.TrimPrefix(ctrl, "nvme")+"n1", 1)
 	}
 	must(h.t, os.MkdirAll(filepath.Join(h.sys, "class/nvme", ctrl, classEntry), 0o755))
-	write(h.t, filepath.Join(h.sys, "block", ns, "size"), fmt.Sprint(diskSize/512))
+	write(h.t, filepath.Join(h.sys, "block", ns, "size"), strconv.Itoa(diskSize/512))
 	write(h.t, filepath.Join(h.sys, "block", ns, "removable"), "0")
 	write(h.t, filepath.Join(h.sys, "block", ns, "nsid"), "1")
 	path := h.makeDisk(ns)
@@ -133,7 +134,7 @@ func (h *testHost) addSCSI(name string, s scsiSpec) {
 	if s.model == "" {
 		s.model = "MOCKMODEL"
 	}
-	host := "host" + fmt.Sprint(len(name)*7+int(name[len(name)-1]))
+	host := "host" + strconv.Itoa(len(name)*7+int(name[len(name)-1]))
 	devpath := filepath.Join(h.sys, "devices/pci0000:00", host, "target0:0:0", "0:0:0:"+name)
 	if s.usb {
 		devpath = filepath.Join(h.sys, "devices/pci0000:00/usb1", host, "target0:0:0", "0:0:0:"+name)
@@ -141,9 +142,9 @@ func (h *testHost) addSCSI(name string, s scsiSpec) {
 	blk := filepath.Join(devpath, "block", name)
 	write(h.t, filepath.Join(devpath, "vendor"), fmt.Sprintf("%-8s\n", s.vendor))
 	write(h.t, filepath.Join(devpath, "model"), s.model+"\n")
-	write(h.t, filepath.Join(blk, "queue/rotational"), fmt.Sprint(s.rotational))
-	write(h.t, filepath.Join(blk, "removable"), fmt.Sprint(s.removable))
-	write(h.t, filepath.Join(blk, "size"), fmt.Sprint(diskSize/512))
+	write(h.t, filepath.Join(blk, "queue/rotational"), strconv.Itoa(s.rotational))
+	write(h.t, filepath.Join(blk, "removable"), strconv.Itoa(s.removable))
+	write(h.t, filepath.Join(blk, "size"), strconv.Itoa(diskSize/512))
 	must(h.t, os.Symlink(devpath, filepath.Join(blk, "device")))
 	write(h.t, filepath.Join(h.sys, "class/scsi_host", host, "proc_name"), s.driver+"\n")
 	must(h.t, os.Symlink(blk, filepath.Join(h.sys, "block", name)))
@@ -158,9 +159,9 @@ func (h *testHost) addSCSI(name string, s scsiSpec) {
 
 // mount marks partition <disk>1 as mounted on /.
 func (h *testHost) mount(disk string) {
-	real, err := filepath.EvalSymlinks(filepath.Join(h.sys, "block", disk))
+	resolved, err := filepath.EvalSymlinks(filepath.Join(h.sys, "block", disk))
 	must(h.t, err)
-	part := filepath.Join(real, disk+"1")
+	part := filepath.Join(resolved, disk+"1")
 	write(h.t, filepath.Join(part, "partition"), "1")
 	must(h.t, os.Symlink(part, filepath.Join(h.sys, "class/block", disk+"1")))
 	f, err := os.OpenFile(filepath.Join(h.proc, "mounts"), os.O_APPEND|os.O_WRONLY, 0)

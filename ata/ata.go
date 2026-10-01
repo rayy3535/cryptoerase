@@ -59,7 +59,7 @@ func FromWords(w []uint16) (*Identify, error) {
 func (id *Identify) str(first, n int) string {
 	b := make([]byte, 0, 2*n)
 	for i := first; i < first+n; i++ {
-		b = append(b, byte(id.Words[i]>>8), byte(id.Words[i]))
+		b = binary.BigEndian.AppendUint16(b, id.Words[i])
 	}
 	s := string(b)
 	start, end := 0, len(s)

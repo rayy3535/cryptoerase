@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -248,10 +249,10 @@ func TestInUseThroughDeviceMapperAndSwap(t *testing.T) {
 	appendLine(t, filepath.Join(h.proc, "mounts"), "/dev/mapper/vg-root / ext4 rw 0 0")
 
 	// Swap on sdb2.
-	real, err := filepath.EvalSymlinks(filepath.Join(h.sys, "block/sdb"))
+	resolved, err := filepath.EvalSymlinks(filepath.Join(h.sys, "block/sdb"))
 	must(t, err)
-	write(t, filepath.Join(real, "sdb2/partition"), "2")
-	must(t, symlink(filepath.Join(real, "sdb2"), filepath.Join(h.sys, "class/block/sdb2")))
+	write(t, filepath.Join(resolved, "sdb2/partition"), "2")
+	must(t, symlink(filepath.Join(resolved, "sdb2"), filepath.Join(h.sys, "class/block/sdb2")))
 	appendLine(t, filepath.Join(h.proc, "swaps"), "/dev/sdb2 partition 1048572 0 -2")
 
 	rep := h.run(h.options(ModeErase))
@@ -271,15 +272,15 @@ func TestRootMountedAsDevRoot(t *testing.T) {
 	n := h.addNVMe("nvme0", nvmeSpec{sanicap: 1})
 	h.addNVMe("nvme1", nvmeSpec{sanicap: 1})
 
-	real, err := filepath.EvalSymlinks(filepath.Join(h.sys, "block/sda"))
+	resolved, err := filepath.EvalSymlinks(filepath.Join(h.sys, "block/sda"))
 	must(t, err)
-	write(t, filepath.Join(real, "sda1/partition"), "1")
-	must(t, symlink(filepath.Join(real, "sda1"), filepath.Join(h.sys, "class/block/sda1")))
+	write(t, filepath.Join(resolved, "sda1/partition"), "1")
+	must(t, symlink(filepath.Join(resolved, "sda1"), filepath.Join(h.sys, "class/block/sda1")))
 	part := filepath.Join(h.sys, "block/nvme0n1/nvme0n1p1")
 	write(t, filepath.Join(part, "partition"), "1")
 	must(t, symlink(part, filepath.Join(h.sys, "class/block/nvme0n1p1")))
 	must(t, os.MkdirAll(filepath.Join(h.sys, "dev/block"), 0o755))
-	must(t, symlink(filepath.Join(real, "sda1"), filepath.Join(h.sys, "dev/block/8:1")))
+	must(t, symlink(filepath.Join(resolved, "sda1"), filepath.Join(h.sys, "dev/block/8:1")))
 	must(t, symlink(part, filepath.Join(h.sys, "dev/block/259:1")))
 
 	appendLine(t, filepath.Join(h.proc, "mounts"), "/dev/root / ext4 rw 0 0")
@@ -347,7 +348,7 @@ func TestOptionsValidation(t *testing.T) {
 		len(v.FirmwarePolicy) != len(DefaultFirmwarePolicy()) {
 		t.Errorf("defaults %+v", v)
 	}
-	// The real constructors must at least fail cleanly on missing paths.
+	// The resolved constructors must at least fail cleanly on missing paths.
 	if _, err := v.OpenNVMe(filepath.Join(t.TempDir(), "nvme0")); err == nil {
 		t.Error("OpenNVMe on missing path")
 	}
@@ -483,12 +484,7 @@ func TestSATAErrors(t *testing.T) {
 		d := h.ata.disks[dev(n)]
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		for _, c := range d.calls {
-			if c == "crypto-scramble" {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(d.calls, "crypto-scramble")
 	}
 	hk := &ataHook{fakeATA: h.ata}
 	hk.identify = func(d string) (*ata.Identify, error, bool) {
@@ -603,10 +599,7 @@ func TestMarkerFaults(t *testing.T) {
 				openFaulty(&o, tc.nth, tc.openErr, tc.fault)
 				rep := h.run(o)
 				wantResult(t, rep, name, tc.res, tc.reason)
-				erased := false
-				for _, c := range d.calls {
-					erased = erased || c == "crypto-scramble"
-				}
+				erased := slices.Contains(d.calls, "crypto-scramble")
 				if f != nil {
 					erased = f.called("sanitize 4") > 0
 				}

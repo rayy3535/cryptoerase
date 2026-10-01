@@ -52,7 +52,7 @@ func ParseLevel0(b []byte) (*Level0, error) {
 	d := &Level0{}
 	for off := 48; off+4 <= total; {
 		code := binary.BigEndian.Uint16(b[off : off+2])
-		n := int(b[off+3])
+		n := int(b[off+3]) //nolint:gosec // G602: off+4 <= total <= len(b)
 		data := b[off+4 : min(off+4+n, total)]
 		switch code {
 		case featureLocking:

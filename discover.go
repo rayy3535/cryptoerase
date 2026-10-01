@@ -115,8 +115,8 @@ func (r *runner) computeInUse() map[string]bool {
 			return
 		}
 		name := filepath.Base(src)
-		if real, err := filepath.EvalSymlinks(filepath.Join(r.opts.DevRoot, strings.TrimPrefix(src, "/dev/"))); err == nil {
-			name = filepath.Base(real)
+		if resolved, err := filepath.EvalSymlinks(filepath.Join(r.opts.DevRoot, strings.TrimPrefix(src, "/dev/"))); err == nil {
+			name = filepath.Base(resolved)
 		}
 		for _, b := range r.resolveBase(name, 0) {
 			set[b] = true
@@ -151,8 +151,8 @@ func (r *runner) computeInUse() map[string]bool {
 			if len(f) < 3 || strings.HasPrefix(f[2], "0:") { // 0:N = no block device (tmpfs, overlay ...)
 				continue
 			}
-			if real, err := filepath.EvalSymlinks(filepath.Join(r.opts.SysfsRoot, "dev", "block", f[2])); err == nil {
-				for _, b := range r.resolveBase(filepath.Base(real), 0) {
+			if resolved, err := filepath.EvalSymlinks(filepath.Join(r.opts.SysfsRoot, "dev", "block", f[2])); err == nil {
+				for _, b := range r.resolveBase(filepath.Base(resolved), 0) {
 					set[b] = true
 				}
 			}
@@ -174,8 +174,8 @@ func (r *runner) resolveBase(name string, depth int) []string {
 		}
 	}
 	if _, err := os.Stat(filepath.Join(p, "partition")); err == nil {
-		if real, err := filepath.EvalSymlinks(p); err == nil {
-			return []string{filepath.Base(filepath.Dir(real))}
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			return []string{filepath.Base(filepath.Dir(resolved))}
 		}
 	}
 	return []string{name}
@@ -191,11 +191,11 @@ func readTrim(path string) string {
 
 // scsiDriver returns the SCSI host driver (ahci, mpt3sas, megaraid_sas ...).
 func (r *runner) scsiDriver(name string) string {
-	real, err := filepath.EvalSymlinks(filepath.Join(r.opts.SysfsRoot, "block", name, "device"))
+	resolved, err := filepath.EvalSymlinks(filepath.Join(r.opts.SysfsRoot, "block", name, "device"))
 	if err != nil {
 		return "unknown"
 	}
-	for part := range strings.SplitSeq(real, string(filepath.Separator)) {
+	for part := range strings.SplitSeq(resolved, string(filepath.Separator)) {
 		if strings.HasPrefix(part, "host") && len(part) > 4 && strings.Trim(part[4:], "0123456789") == "" {
 			if d := readTrim(filepath.Join(r.opts.SysfsRoot, "class", "scsi_host", part, "proc_name")); d != "" {
 				return d
