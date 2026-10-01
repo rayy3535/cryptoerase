@@ -263,6 +263,43 @@ func TestInUseThroughDeviceMapperAndSwap(t *testing.T) {
 	}
 }
 
+func TestRootMountedAsDevRoot(t *testing.T) {
+	// The kernel reports the root filesystem as /dev/root, which does not
+	// exist in /dev. The disk must still be found through mountinfo.
+	h := newHost(t)
+	h.addSCSI("sda", scsiSpec{vendor: "ATA", driver: "ahci", ata: &fakeATADisk{words: ataWords("M", "ROOT", "F", true, false)}})
+	n := h.addNVMe("nvme0", nvmeSpec{sanicap: 1})
+	h.addNVMe("nvme1", nvmeSpec{sanicap: 1})
+
+	real, err := filepath.EvalSymlinks(filepath.Join(h.sys, "block/sda"))
+	must(t, err)
+	write(t, filepath.Join(real, "sda1/partition"), "1")
+	must(t, symlink(filepath.Join(real, "sda1"), filepath.Join(h.sys, "class/block/sda1")))
+	part := filepath.Join(h.sys, "block/nvme0n1/nvme0n1p1")
+	write(t, filepath.Join(part, "partition"), "1")
+	must(t, symlink(part, filepath.Join(h.sys, "class/block/nvme0n1p1")))
+	must(t, os.MkdirAll(filepath.Join(h.sys, "dev/block"), 0o755))
+	must(t, symlink(filepath.Join(real, "sda1"), filepath.Join(h.sys, "dev/block/8:1")))
+	must(t, symlink(part, filepath.Join(h.sys, "dev/block/259:1")))
+
+	appendLine(t, filepath.Join(h.proc, "mounts"), "/dev/root / ext4 rw 0 0")
+	write(t, filepath.Join(h.proc, "self/mountinfo"), strings.Join([]string{
+		"22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/root rw",
+		"23 22 0:21 / /proc rw - proc proc rw",
+		"24 22 259:1 / /var rw - xfs /dev/disk/by-label/var rw",
+		"25 22 7:3 / /snap/core rw - squashfs /dev/loop3 ro", // no sysfs entry: ignored
+		"short line",
+	}, "\n")+"\n")
+
+	rep := h.run(h.options(ModeErase))
+	wantResult(t, rep, "sda", Unhandled, "in use")
+	wantResult(t, rep, "nvme0", Unhandled, "in use")
+	wantResult(t, rep, "nvme1", Pass, "")
+	if len(n.calls) != 0 {
+		t.Errorf("in-use controller was touched: %v", n.calls)
+	}
+}
+
 func TestNamespaceIDFallback(t *testing.T) {
 	h := newHost(t)
 	ok := h.addNVMe("nvme0", nvmeSpec{fna: 4})
