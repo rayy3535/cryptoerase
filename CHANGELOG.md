@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.0-rc.2 (2026-10-01)
+
+- The read-write handle used to write the verification markers stays open until the erase command has finished, and verification reopens the device read-only. Closing the handle earlier made udev re-read the partition table while the drive was sanitizing; the drive rejected the read, and the kernel logged `Buffer I/O error ... logical block 0` and `unable to read RDB block 0`. Erase results were not affected.
+- `Options.OpenBlock` takes a `write` argument; new `blockdev.OpenReadOnly`.
+- Releases are published automatically when a commit on `main` sets a new version.
+
 ## v0.1.0-rc.1 (2026-10-01)
 
 First public version, published as a pre-release for testing on real hardware.
