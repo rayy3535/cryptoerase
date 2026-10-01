@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# cryptoerase build output and reports written by the CLI in the working directory
+/bin/
+/dist/
+/cryptoerase-*.json
