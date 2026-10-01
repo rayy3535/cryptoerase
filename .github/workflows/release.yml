@@ -1,8 +1,9 @@
 name: release
 
 # Push a tag vX.Y.Z (matching cryptoerase.Version and a "## vX.Y.Z" section in
-# CHANGELOG.md) to publish static linux/amd64 and linux/arm64 binaries,
-# SHA256SUMS, and SLSA build provenance.
+# CHANGELOG.md), or publish a release with a new tag in the web UI, to publish
+# static linux/amd64 and linux/arm64 binaries, SHA256SUMS, and SLSA build
+# provenance. A tag with a "-" (v1.2.0-rc.1) is marked as a pre-release.
 on:
   push:
     tags: ["v*.*.*"]
@@ -74,8 +75,17 @@ jobs:
             echo "gh attestation verify cryptoerase-linux-amd64 --repo ${GITHUB_REPOSITORY}"
             echo '```'
           } > body.md
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "cryptoerase $GITHUB_REF_NAME" \
-            --notes-file body.md \
-            --verify-tag "${flags[@]}"
+          title="cryptoerase $GITHUB_REF_NAME"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # The release was created in the web UI, which also created the
+            # tag that started this run: attach the binaries and notes to it.
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "$title" --notes-file body.md "${flags[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --notes-file body.md \
+              --verify-tag "${flags[@]}"
+          fi
