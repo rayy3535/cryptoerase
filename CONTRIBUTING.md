@@ -5,11 +5,14 @@ Issues and pull requests are welcome.
 ## Before sending a change
 
 ```sh
-make        # gofmt check, go vet, tests with -race, static build
+make        # lint (gofmt, go mod tidy, vet, staticcheck, actionlint), tests with -race, static build
+make cover  # must stay at or above 90%
 ```
 
+Go 1.27.1 or later is required. If you touch a parser, run `make fuzz` for a while; if you touch device I/O, run `make integration` as root on a test machine.
+
 - Keep the fail-closed policy. A change must never make a drive that was not cryptographically erased end up as `PASS`.
-- New device behaviour needs a test. The fakes in `fakes_test.go` simulate whole servers. Add a scenario to `run_test.go`.
+- New device behaviour needs a test. The fakes in `fakes_test.go` simulate whole servers; add a scenario to `run_test.go` or `edge_test.go`. Timing rules belong in `synctest_test.go`, which runs on a fake clock.
 - If you change the report, regenerate the examples with `make examples` and update `docs/report.md`.
 
 ## Hardware reports

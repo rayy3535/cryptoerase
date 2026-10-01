@@ -1,22 +1,72 @@
-GO      ?= go
-BIN     := bin/cryptoerase
-LDFLAGS := -s -w
+GO          ?= go
+BIN         := bin/cryptoerase
+LDFLAGS     := -s -w
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
+ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+COVER_MIN   ?= 90
+FUZZTIME    ?= 30s
 
-.PHONY: all build test vet fmt-check release examples clean
+# package:FuzzTarget pairs, one fuzz run each.
+FUZZ_TARGETS := \
+	.:FuzzCompareVersions .:FuzzParseFirmwarePolicy .:FuzzSampleOffsets \
+	./ata:FuzzParseIstdout ./ata:FuzzParseIdentify ./ata:FuzzParseSanitizeStatus \
+	./nvme:FuzzParsers ./nvme:FuzzFormatSpecCDW10 \
+	./tcg:FuzzParseLevel0 ./perc:FuzzParse
 
-all: fmt-check vet test build
+.PHONY: all build test vet fmt-check tidy-check staticcheck vulncheck actionlint lint cover fuzz integration release examples clean
+
+all: lint test build
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='$(LDFLAGS)' -o $(BIN) ./cmd/cryptoerase
 
 test:
-	$(GO) test -race -count=1 ./...
+	$(GO) test -race -count=1 -shuffle=on ./...
 
 vet:
 	$(GO) vet ./...
+	$(GO) vet -tags integration ./...
 
 fmt-check:
 	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+
+tidy-check:
+	$(GO) mod tidy -diff
+
+staticcheck:
+	$(GO) run $(STATICCHECK) ./...
+	$(GO) run $(STATICCHECK) -tags integration ./...
+
+vulncheck:
+	$(GO) run $(GOVULNCHECK) ./...
+
+# actionlint also runs shellcheck on workflow scripts when it is installed.
+actionlint:
+	$(GO) run $(ACTIONLINT)
+
+lint: fmt-check tidy-check vet staticcheck actionlint
+
+# cover writes coverage.out and fails below COVER_MIN percent.
+cover:
+	$(GO) test -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+	@$(GO) tool cover -func=coverage.out | tail -1
+	@total=$$($(GO) tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$$3); print $$3}'); \
+	if awk -v t="$$total" -v m="$(COVER_MIN)" 'BEGIN { exit !(t < m) }'; then \
+		echo "coverage $$total% is below $(COVER_MIN)%"; exit 1; fi
+
+fuzz:
+	@for t in $(FUZZ_TARGETS); do \
+		pkg=$${t%%:*}; fn=$${t##*:}; \
+		echo "fuzz $$fn ($$pkg) for $(FUZZTIME)"; \
+		$(GO) test -run='^$$' -fuzz="^$$fn$$" -fuzztime=$(FUZZTIME) $$pkg || exit 1; \
+	done
+
+# integration needs root (loop devices, NVMe admin commands). It writes only
+# to a loop device backed by a temporary file.
+integration:
+	$(GO) test -c -tags integration -o bin/integration.test .
+	sudo ./bin/integration.test -test.v -test.count=1
 
 release:
 	@mkdir -p dist
@@ -28,7 +78,7 @@ release:
 	cd dist && sha256sum cryptoerase-linux-* > SHA256SUMS
 
 examples:
-	CRYPTOERASE_WRITE_EXAMPLES=1 $(GO) test -count=1 -run TestWriteExamples .
+	CRYPTOERASE_WRITE_EXAMPLES=1 $(GO) test -count=1 -run TestExamples .
 
 clean:
-	rm -rf bin dist
+	rm -rf bin dist coverage.out

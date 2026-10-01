@@ -1,5 +1,10 @@
 # cryptoerase
 
+[![ci](https://github.com/rayy3535/cryptoerase/actions/workflows/ci.yml/badge.svg)](https://github.com/rayy3535/cryptoerase/actions/workflows/ci.yml)
+[![codeql](https://github.com/rayy3535/cryptoerase/actions/workflows/codeql.yml/badge.svg)](https://github.com/rayy3535/cryptoerase/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/rayy3535/cryptoerase/badge)](https://scorecard.dev/viewer/?uri=github.com/rayy3535/cryptoerase)
+[![Go Reference](https://pkg.go.dev/badge/github.com/rayy3535/cryptoerase.svg)](https://pkg.go.dev/github.com/rayy3535/cryptoerase)
+
 Cryptographic erase for the NVMe and SATA SSDs in a Linux server, with a JSON evidence report per run. Useful wherever servers pass from one user to the next (bare-metal hosting, hardware refresh and resale, lab fleets) and you need to show, drive by drive, how the previous data was destroyed.
 
 It is a Go library (`github.com/rayy3535/cryptoerase`) with a small command-line tool (`cmd/cryptoerase`).
@@ -53,12 +58,23 @@ The binary is static (`CGO_ENABLED=0`) and has no other runtime dependencies. It
 
 ## Install
 
+Release binaries are static and built by GitHub Actions from the tagged commit, with [SLSA build provenance](https://slsa.dev/spec/v1.0/provenance). Download `cryptoerase-linux-amd64` or `-arm64` and `SHA256SUMS` from the [releases page](https://github.com/rayy3535/cryptoerase/releases), then check them before copying the binary into your maintenance image:
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify cryptoerase-linux-amd64 --repo rayy3535/cryptoerase
+```
+
+From source (Go 1.27.1 or later):
+
 ```sh
 go install github.com/rayy3535/cryptoerase/cmd/cryptoerase@latest
-# or
+# or, in a checkout
 make build        # bin/cryptoerase, static
 make release      # dist/cryptoerase-linux-{amd64,arm64} + SHA256SUMS
 ```
+
+`cryptoerase --version` prints the version, the commit it was built from, and the Go version.
 
 ## Usage
 
@@ -72,7 +88,7 @@ cryptoerase --yes --job-id RECLAIM-1234 --report /var/tmp/erase.json
 
 | Flag | Meaning |
 |---|---|
-| `--inventory` | Detect and plan only |
+| `--inventory` | Detect and plan only. Cannot be combined with `--yes` |
 | `--yes` | Required to erase |
 | `--report FILE` | Report path. Default `./cryptoerase-<serial>-<UTC>.json` |
 | `--job-id ID` | Copied into the report |
@@ -84,6 +100,7 @@ cryptoerase --yes --job-id RECLAIM-1234 --report /var/tmp/erase.json
 | `--poll-interval`, `--no-progress-timeout`, `--format-timeout` | Sanitize polling and timeouts |
 | `--hdparm PATH` | hdparm binary |
 | `--log-format text\|json` | stderr log format |
+| `--version` | Print version, commit and Go version |
 
 Exit codes:
 
@@ -167,26 +184,33 @@ Rule format, one per line: `model regex ; firmware regex ; minimum ; reference`.
 
 ## Development
 
+Requires Go 1.27.1 or later.
+
 ```sh
-make            # gofmt check, vet, tests with -race, static build
-make examples   # regenerate examples/*.json from a simulated host
+make              # lint (gofmt, go mod tidy, vet, staticcheck, actionlint), tests with -race, static build
+make cover        # coverage profile; fails below 90%
+make fuzz         # fuzz every parser for FUZZTIME (default 30s) each
+make vulncheck    # govulncheck
+make integration  # needs root: real kernel tests on a loop device, read-only NVMe identify
+make examples     # regenerate examples/*.json after an intended report change
 ```
 
-The tests build a fake sysfs tree, use sparse files as drives, and swap in fake NVMe, ATA and RAID backends. Scenarios covered:
+The tests come in four layers:
 
-- Honest erase
-- Firmware that reports success but keeps the data
-- Failed and stalled sanitize
-- Rejected commands
-- Format-only NVMe 1.2 controllers
-- Firmware floor
-- Unallocated NVM capacity
-- RAID virtual disks
-- HDD, USB and in-use disks
-- Native NVMe multipath naming
-- TCG locking
-- Cancellation
-- The `--parallel` bound
+- **Scenario tests** build a fake sysfs tree, use sparse files as drives, and swap in fake NVMe, ATA and RAID backends to run whole servers through `Run`. They cover: honest erase; firmware that reports success but keeps the data; failed, stalled, rejected and interrupted sanitize; unreadable device status; format-only NVMe 1.2 controllers; the firmware floor; unallocated NVM capacity; RAID virtual disks; HDD, USB, removable, virtual and in-use disks (including through LVM and swap); native NVMe multipath naming; TCG locking; marker write, read-back and verification faults; cancellation; the `--parallel` bound.
+- **Unit tests** per package, including the exact bytes of every NVMe admin command handed to the kernel (through an injectable ioctl), and the polling loops on a fake clock (`testing/synctest`) with the production timeouts.
+- **Fuzz tests** for every parser of device or tool output (NVMe Identify and log pages, ATA IDENTIFY and hdparm output, TCG Level 0 Discovery, perccli/storcli JSON, firmware policy and version ordering).
+- **Integration tests** (`-tags integration`) against the running kernel: O_DIRECT and block ioctls on a loop device, markers, an inventory of the host, and Identify on any NVMe controller present. They never write to a real drive.
+
+The example reports in `examples/` are golden files: the tests fail if the code would produce something different.
+
+CI runs all of this on linux/amd64 and linux/arm64 for every push and pull request, plus a nightly long fuzz run, CodeQL and OpenSSF Scorecard. The integration job also runs `cryptoerase --inventory` on the runner and shows the report in the job summary; CI never runs an erase.
+
+### Releasing
+
+1. Set `Version` in `options.go` and turn `## vX.Y.Z (unreleased)` in `CHANGELOG.md` into `## vX.Y.Z (YYYY-MM-DD)`.
+2. Merge, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+3. The release workflow checks that the tag, `Version` and the changelog agree, runs lint and tests, builds both binaries, attests their provenance, and publishes the GitHub release with the changelog section as notes.
 
 Hardware reports are very welcome. Please include the drive model, firmware and the `--inventory` report; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
