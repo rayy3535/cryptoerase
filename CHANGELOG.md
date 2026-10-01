@@ -1,8 +1,8 @@
 # Changelog
 
-## v0.1.0 (unreleased)
+## v0.1.0-rc.1 (2026-10-01)
 
-First public version.
+First public version, published as a pre-release for testing on real hardware.
 
 - NVMe cryptographic erase through native admin passthrough: Sanitize Crypto Erase, and Format NVM with SES=010b behind `--allow-format`. The Format path keeps the current LBA format, metadata setting and protection information, and refuses when unallocated NVM capacity exists.
 - SATA cryptographic erase through hdparm: SANITIZE CRYPTO SCRAMBLE EXT, with status polling.
