@@ -1,0 +1,68 @@
+# golangci-lint v2 configuration. Run with `make golangci` (part of `make lint`).
+version: "2"
+
+run:
+  build-tags: [integration]
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - intrange
+    - misspell
+    - modernize
+    - nilerr
+    - nolintlint
+    - perfsprint
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+
+  settings:
+    gosec:
+      # G103 (unsafe) and G204 (subprocess) stay on: each use carries a
+      # //nolint with its justification.
+      excludes:
+        # Opening device nodes, sysfs/procfs files and operator-supplied
+        # paths (--fw-policy, --report) is what this tool is for.
+        - G304
+        # Unchecked errors are covered by errcheck and its exclusions below.
+        - G104
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      enable-default-rules: true
+      rules:
+        # Fakes and callbacks implement interfaces; unused parameters are
+        # part of the signature.
+        - name: unused-parameter
+          disabled: true
+
+  exclusions:
+    presets:
+      # Close/Flush/Remove and fmt.Fprint* to stdout/stderr. Close after
+      # writes that matter is checked explicitly (report file, markers are
+      # Sync'ed before).
+      - std-error-handling
+    rules:
+      # Tests create fixtures with ordinary permissions and run helper
+      # processes on purpose.
+      - path: _test\.go
+        linters: [gosec]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: [github.com/rayy3535/cryptoerase]

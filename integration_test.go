@@ -2,7 +2,7 @@
 
 //go:build integration && linux
 
-// Integration tests run against the real kernel. They need root and are
+// Integration tests run against the resolved kernel. They need root and are
 // opt-in:
 //
 //	go test -c -tags integration -o integration.test . && sudo ./integration.test -test.v
@@ -152,13 +152,13 @@ func TestIntegrationInventoryOnHost(t *testing.T) {
 		t.Logf("/ is not on a block device (%d:%d)", major, minor)
 		return
 	}
-	real, err := filepath.EvalSymlinks(fmt.Sprintf("/sys/dev/block/%d:%d", major, minor))
+	resolved, err := filepath.EvalSymlinks(fmt.Sprintf("/sys/dev/block/%d:%d", major, minor))
 	if err != nil {
 		t.Logf("/ device %d:%d not in sysfs: %v", major, minor, err)
 		return
 	}
 	r := &runner{opts: Options{SysfsRoot: "/sys"}}
-	bases := r.resolveBase(filepath.Base(real), 0)
+	bases := r.resolveBase(filepath.Base(resolved), 0)
 	t.Logf("/ is on %v", bases)
 	for _, d := range rep.Drives {
 		for _, b := range bases {

@@ -52,7 +52,8 @@ func (h *Hdparm) run(ctx context.Context, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, path, args...)
+	// G204: the hdparm path is operator configuration; no shell is involved.
+	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // G204, see above
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	// If hdparm is killed on timeout but something still holds its output
 	// pipes, stop waiting for them shortly after.

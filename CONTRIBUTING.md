@@ -5,7 +5,7 @@ Issues and pull requests are welcome.
 ## Before sending a change
 
 ```sh
-make        # lint (gofmt, go mod tidy, vet, staticcheck, actionlint), tests with -race, static build
+make        # lint (gofmt, go mod tidy, vet, golangci-lint, actionlint), tests with -race, static build
 make cover  # must stay at or above 90%
 ```
 

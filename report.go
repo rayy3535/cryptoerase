@@ -17,6 +17,7 @@ const Schema = "cryptoerase.report/v1"
 // Result is the outcome for one drive.
 type Result string
 
+// Drive results.
 const (
 	Pass      Result = "PASS"      // crypto-erased and verified
 	Fail      Result = "FAIL"      // cannot be, or was not, crypto-erased

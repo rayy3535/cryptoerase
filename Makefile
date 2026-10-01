@@ -1,7 +1,7 @@
 GO          ?= go
 BIN         := bin/cryptoerase
 LDFLAGS     := -s -w
-STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+GOLANGCI    := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
 ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 COVER_MIN   ?= 90
@@ -14,7 +14,7 @@ FUZZ_TARGETS := \
 	./nvme:FuzzParsers ./nvme:FuzzFormatSpecCDW10 \
 	./tcg:FuzzParseLevel0 ./perc:FuzzParse
 
-.PHONY: all build test vet fmt-check tidy-check staticcheck vulncheck actionlint lint cover fuzz integration release examples clean
+.PHONY: all build test vet fmt-check tidy-check golangci vulncheck actionlint lint cover fuzz integration release examples clean
 
 all: lint test build
 
@@ -34,9 +34,10 @@ fmt-check:
 tidy-check:
 	$(GO) mod tidy -diff
 
-staticcheck:
-	$(GO) run $(STATICCHECK) ./...
-	$(GO) run $(STATICCHECK) -tags integration ./...
+# golangci-lint runs staticcheck, errcheck, gosec, revive and more; see
+# .golangci.yml. It covers the integration build tag too.
+golangci:
+	$(GO) run $(GOLANGCI) run ./...
 
 vulncheck:
 	$(GO) run $(GOVULNCHECK) ./...
@@ -45,7 +46,7 @@ vulncheck:
 actionlint:
 	$(GO) run $(ACTIONLINT)
 
-lint: fmt-check tidy-check vet staticcheck actionlint
+lint: fmt-check tidy-check vet golangci actionlint
 
 # cover writes coverage.out and fails below COVER_MIN percent.
 cover:

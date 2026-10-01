@@ -4,6 +4,7 @@ package nvme
 
 import (
 	"encoding/binary"
+	"math"
 	"testing"
 	"unsafe"
 )
@@ -107,6 +108,21 @@ func TestIdentifyNamespaceAndFormatSpec(t *testing.T) {
 	plain := FormatSpec{LBAF: 0, SES: SESCryptoErase}
 	if plain.CDW10() != 0x400 {
 		t.Errorf("plain cdw10 %#x", plain.CDW10())
+	}
+}
+
+func TestGetLogPageCDWBounds(t *testing.T) {
+	for size, want := range map[int][2]uint32{
+		512:           {0x007f0081, 0},
+		0:             {0x00000081, 0}, // NUMD is 0-based: never wraps to 0xffffffff
+		2:             {0x00000081, 0},
+		1 << 20:       {0xffff0081, 0x3},
+		math.MaxInt64: {0xffff0081, 0xffff},
+	} {
+		d10, d11 := GetLogPageCDW(0x81, size)
+		if d10 != want[0] || d11 != want[1] {
+			t.Errorf("size %d: %#x %#x, want %#x %#x", size, d10, d11, want[0], want[1])
+		}
 	}
 }
 

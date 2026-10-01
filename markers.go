@@ -50,7 +50,7 @@ func sampleOffsets(size int64, n int) []int64 {
 	}
 	var out []int64
 	seen := map[int64]bool{}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		idx := int64(i) * (total - 1) / int64(n-1)
 		if !seen[idx] {
 			seen[idx] = true
@@ -71,12 +71,12 @@ func (r *runner) buffer() ([]byte, func(), error) {
 func (r *runner) writeMarkers(path string) (*markers, error) {
 	dev, err := r.opts.OpenBlock(path, !r.opts.DisableDirectIO)
 	if err != nil {
-		return nil, fmt.Errorf("%w: open %s: %v", errMarkerWrite, path, err)
+		return nil, fmt.Errorf("%w: open %s: %w", errMarkerWrite, path, err)
 	}
 	defer dev.Close()
 	size, err := dev.Size()
 	if err != nil {
-		return nil, fmt.Errorf("%w: size of %s: %v", errMarkerWrite, path, err)
+		return nil, fmt.Errorf("%w: size of %s: %w", errMarkerWrite, path, err)
 	}
 	offs := sampleOffsets(size, r.opts.Samples)
 	if len(offs) == 0 {
@@ -99,13 +99,13 @@ func (r *runner) writeMarkers(path string) (*markers, error) {
 		}
 		sum := sha256.Sum256(buf)
 		if _, err := dev.WriteAt(buf, off); err != nil {
-			return nil, fmt.Errorf("%w at offset %d: %v", errMarkerWrite, off, err)
+			return nil, fmt.Errorf("%w at offset %d: %w", errMarkerWrite, off, err)
 		}
 		if err := dev.Sync(); err != nil {
-			return nil, fmt.Errorf("%w: sync: %v", errMarkerWrite, err)
+			return nil, fmt.Errorf("%w: sync: %w", errMarkerWrite, err)
 		}
 		if _, err := dev.ReadAt(rb, off); err != nil {
-			return nil, fmt.Errorf("%w: read at %d: %v", errMarkerReadback, off, err)
+			return nil, fmt.Errorf("%w: read at %d: %w", errMarkerReadback, off, err)
 		}
 		if sha256.Sum256(rb) != sum {
 			return nil, fmt.Errorf("%w at offset %d", errMarkerReadback, off)

@@ -33,6 +33,14 @@ func TestParseIdentifyBytes(t *testing.T) {
 	}
 }
 
+func TestNonRotating(t *testing.T) {
+	ssd, _ := FromWords(identifyWords("M", "S", "F", 0, 0, true))
+	hdd, _ := FromWords(identifyWords("M", "S", "F", 0, 0, false))
+	if !ssd.NonRotating() || hdd.NonRotating() {
+		t.Fatal("word 217")
+	}
+}
+
 func TestSectors28Bit(t *testing.T) {
 	w := make([]uint16, 256)
 	w[60], w[61] = 0x5678, 0x0fff // no LBA48 (word 83 bit 10 clear)

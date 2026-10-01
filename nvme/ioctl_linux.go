@@ -5,7 +5,9 @@
 package nvme
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"syscall"
@@ -73,7 +75,8 @@ func OpenController(path string) (*Controller, error) {
 }
 
 func (c *Controller) sysIoctl(req uintptr, cmd *passthruCmd, data []byte) (uintptr, syscall.Errno) {
-	r1, _, errno := syscall.Syscall(syscall.SYS_IOCTL, c.f.Fd(), req, uintptr(unsafe.Pointer(cmd)))
+	// G103: the kernel ABI takes a pointer to struct nvme_passthru_cmd.
+	r1, _, errno := syscall.Syscall(syscall.SYS_IOCTL, c.f.Fd(), req, uintptr(unsafe.Pointer(cmd))) //nolint:gosec // G103, see above
 	runtime.KeepAlive(data)
 	return r1, errno
 }
@@ -99,22 +102,42 @@ func dmaBuffer(n int) ([]byte, func(), error) {
 	return b, func() { _ = syscall.Munmap(b) }, nil
 }
 
-func (c *Controller) admin(op string, cmd *passthruCmd, data []byte) (uint32, error) {
+var errTransferSize = errors.New("data transfer larger than 4 GiB")
+
+// msTimeout converts d to the 32-bit millisecond timeout field, saturating
+// at about 49.7 days instead of wrapping around to a short timeout.
+func msTimeout(d time.Duration) uint32 {
+	switch ms := d.Milliseconds(); {
+	case ms <= 0:
+		return 0
+	case ms > math.MaxUint32:
+		return math.MaxUint32
+	default:
+		return uint32(ms)
+	}
+}
+
+func (c *Controller) admin(op string, cmd *passthruCmd, data []byte) error {
 	if len(data) > 0 {
-		cmd.Addr = uint64(uintptr(unsafe.Pointer(&data[0])))
-		cmd.DataLen = uint32(len(data))
+		if uint64(len(data)) > math.MaxUint32 {
+			return fmt.Errorf("nvme %s on %s: %w", op, c.path, errTransferSize)
+		}
+		// G103: the kernel DMAs into data; dmaBuffer keeps it outside the Go heap.
+		cmd.Addr = uint64(uintptr(unsafe.Pointer(&data[0]))) //nolint:gosec // G103, see above
+		cmd.DataLen = uint32(len(data))                      //nolint:gosec // G115: bounded by the check above
 	}
 	if cmd.TimeoutMs == 0 {
-		cmd.TimeoutMs = uint32(defaultTimeout / time.Millisecond)
+		cmd.TimeoutMs = msTimeout(defaultTimeout)
 	}
 	r1, errno := c.ioctl(ioctlAdminCmd, cmd, data)
 	if errno != 0 {
-		return 0, fmt.Errorf("nvme %s on %s: %w", op, c.path, errno)
+		return fmt.Errorf("nvme %s on %s: %w", op, c.path, errno)
 	}
 	if r1 != 0 {
-		return 0, &StatusError{Op: op, Status: uint32(r1)}
+		// The ioctl returns the 16-bit NVMe completion status.
+		return &StatusError{Op: op, Status: uint32(r1 & 0xffff)}
 	}
-	return cmd.Result, nil
+	return nil
 }
 
 // readCmd runs a command that returns size bytes and hands a copy to parse.
@@ -124,7 +147,7 @@ func (c *Controller) readCmd(op string, cmd *passthruCmd, size int) ([]byte, err
 		return nil, err
 	}
 	defer release()
-	if _, err := c.admin(op, cmd, buf); err != nil {
+	if err := c.admin(op, cmd, buf); err != nil {
 		return nil, err
 	}
 	out := make([]byte, size)
@@ -176,20 +199,21 @@ func (c *Controller) SmartLog() (*SmartLog, error) {
 // Sanitize starts a sanitize operation. The command completes once the
 // operation has started; progress is reported in the Sanitize Status log.
 func (c *Controller) Sanitize(action SanitizeAction, ause bool) error {
-	_, err := c.admin("sanitize", &passthruCmd{Opcode: opSanitize, CDW10: SanitizeCDW10(action, ause)}, nil)
-	return err
+	return c.admin("sanitize", &passthruCmd{Opcode: opSanitize, CDW10: SanitizeCDW10(action, ause)}, nil)
 }
 
 // Format issues Format NVM for nsid and waits up to timeout for completion.
 func (c *Controller) Format(nsid uint32, spec FormatSpec, timeout time.Duration) error {
-	cmd := &passthruCmd{Opcode: opFormatNVM, NSID: nsid, CDW10: spec.CDW10(), TimeoutMs: uint32(timeout / time.Millisecond)}
-	_, err := c.admin("format", cmd, nil)
-	return err
+	cmd := &passthruCmd{Opcode: opFormatNVM, NSID: nsid, CDW10: spec.CDW10(), TimeoutMs: msTimeout(timeout)}
+	return c.admin("format", cmd, nil)
 }
 
 // SecurityReceive issues Security Receive (used for TCG Level 0 Discovery:
 // SECP 01h, SPSP 0001h).
 func (c *Controller) SecurityReceive(secp uint8, spsp uint16, size int) ([]byte, error) {
+	if size <= 0 || int64(size) > math.MaxUint32 {
+		return nil, fmt.Errorf("nvme security-recv on %s: invalid size %d", c.path, size)
+	}
 	cmd := &passthruCmd{Opcode: opSecurityRecv, CDW10: SecurityReceiveCDW10(secp, spsp), CDW11: uint32(size)}
 	return c.readCmd("security-recv", cmd, size)
 }
@@ -215,7 +239,8 @@ func NamespaceID(blockDev string) (uint32, error) {
 	if errno != 0 {
 		return 0, fmt.Errorf("NVME_IOCTL_ID on %s: %w", blockDev, errno)
 	}
-	return uint32(r1), nil
+	// NSIDs are 32-bit; the ioctl returns one as a non-negative int.
+	return uint32(r1 & math.MaxUint32), nil
 }
 
 var _ Device = (*Controller)(nil)

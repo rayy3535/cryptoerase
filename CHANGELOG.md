@@ -18,4 +18,6 @@ First public version.
 - `--inventory` and `--yes` together, an unknown `--log-format`, and negative durations are rejected as bad arguments.
 - In-use detection also resolves mounts by device number from `/proc/self/mountinfo`, so a root filesystem shown as `/dev/root`, or a filesystem mounted through a udev symlink or a renamed device-mapper node, still protects its disk.
 - hdparm and perccli/storcli calls stop waiting for output pipes 5 s after a timeout kills the tool.
-- Release binaries are built in GitHub Actions with SLSA build provenance; CI covers linux/amd64 and linux/arm64 with race-enabled tests, a 90% coverage floor, fuzzing, kernel integration tests, staticcheck, govulncheck, CodeQL and OpenSSF Scorecard.
+- Release binaries are built in GitHub Actions with SLSA build provenance; CI covers linux/amd64 and linux/arm64 with race-enabled tests, a 90% coverage floor, fuzzing, kernel integration tests, golangci-lint (including staticcheck, errcheck, gosec and revive), govulncheck, CodeQL and OpenSSF Scorecard.
+- The Format NVM timeout saturates at the 32-bit millisecond limit (about 49.7 days) instead of wrapping around to a short timeout, and Get Log Page requests smaller than one dword no longer wrap the dword count.
+- Marker errors wrap the underlying I/O error, so callers can test it with `errors.Is`.

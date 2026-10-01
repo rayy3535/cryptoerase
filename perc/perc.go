@@ -86,7 +86,8 @@ func (l *Lister) List(ctx context.Context) ([]Drive, error) {
 
 func runCommand(ctx context.Context, path string, args ...string) ([]byte, error) {
 	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, path, args...)
+	// G204: path comes from exec.LookPath of a fixed tool name; no shell.
+	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // G204, see above
 	cmd.Stdout = &out
 	cmd.WaitDelay = 5 * time.Second
 	err := cmd.Run()

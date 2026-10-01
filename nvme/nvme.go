@@ -154,7 +154,7 @@ func ParseIdentifyNamespace(b []byte) (*IdentifyNamespace, error) {
 		DPS:   b[29],
 	}
 	n := min(int(ns.NLBAF)+1, 64)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		o := 128 + 4*i
 		ns.LBAF = append(ns.LBAF, LBAFormat{
 			MetadataSize:  binary.LittleEndian.Uint16(b[o : o+2]),
@@ -194,6 +194,7 @@ func (n *IdentifyNamespace) BlockSize() uint32 {
 // SES is the Secure Erase Settings field of Format NVM (CDW10 bits 11:9).
 type SES uint8
 
+// Secure Erase Settings values.
 const (
 	SESNone          SES = 0 // no secure erase requested
 	SESUserDataErase SES = 1 // all user data erased; contents afterwards indeterminate
@@ -250,6 +251,7 @@ func KeepCurrentFormat(ns *IdentifyNamespace, ses SES) FormatSpec {
 // SanitizeAction is the SANACT field of the Sanitize command.
 type SanitizeAction uint8
 
+// Sanitize actions.
 const (
 	SanitizeExitFailureMode SanitizeAction = 1
 	SanitizeBlockErase      SanitizeAction = 2

@@ -22,9 +22,9 @@ func (r *runner) scsiDrive(ctx context.Context, name string) *DriveRecord {
 	model := readTrim(filepath.Join(p, "device", "model"))
 	driver := r.scsiDriver(name)
 	rec.Attach = &Attach{Driver: driver, SCSIVendor: vendor, SCSIModel: model}
-	real, _ := filepath.EvalSymlinks(p)
+	resolved, _ := filepath.EvalSymlinks(p)
 
-	if readTrim(filepath.Join(p, "removable")) == "1" || strings.Contains(real, "/usb") {
+	if readTrim(filepath.Join(p, "removable")) == "1" || strings.Contains(resolved, "/usb") {
 		return r.done(rec, Skipped, "removable or USB device (virtual media / install media)")
 	}
 	sectors, _ := strconv.ParseUint(readTrim(filepath.Join(p, "size")), 10, 64)

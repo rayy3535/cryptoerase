@@ -2,7 +2,10 @@
 
 package nvme
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // Device is the set of admin operations the erase workflow needs. *Controller
 // implements it on Linux; tests substitute a fake.
@@ -26,8 +29,18 @@ const (
 )
 
 // GetLogPageCDW returns CDW10 and CDW11 for a Get Log Page of size bytes.
+// NUMD is a 0-based dword count; sizes below one dword request one dword,
+// sizes beyond the 32-bit field request the maximum.
 func GetLogPageCDW(lid uint8, size int) (cdw10, cdw11 uint32) {
-	numd := uint32(size/4) - 1
+	var numd uint32
+	switch dwords := int64(size) / 4; {
+	case dwords <= 1:
+		numd = 0
+	case dwords > math.MaxUint32:
+		numd = math.MaxUint32
+	default:
+		numd = uint32(dwords - 1)
+	}
 	return uint32(lid) | (numd&0xffff)<<16, numd >> 16
 }
 

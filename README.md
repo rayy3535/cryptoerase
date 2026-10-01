@@ -187,7 +187,7 @@ Rule format, one per line: `model regex ; firmware regex ; minimum ; reference`.
 Requires Go 1.27.1 or later.
 
 ```sh
-make              # lint (gofmt, go mod tidy, vet, staticcheck, actionlint), tests with -race, static build
+make              # lint (gofmt, go mod tidy, vet, golangci-lint, actionlint), tests with -race, static build
 make cover        # coverage profile; fails below 90%
 make fuzz         # fuzz every parser for FUZZTIME (default 30s) each
 make vulncheck    # govulncheck
