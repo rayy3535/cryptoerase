@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,5 +68,47 @@ func TestListFallsBackToSall(t *testing.T) {
 	d, err := l.List(context.Background())
 	if err != nil || len(d) != 2 || d[0].Tool != "storcli64" || len(calls) != 2 {
 		t.Fatalf("%v %+v %v", err, d, calls)
+	}
+}
+
+func TestListRunsTheTool(t *testing.T) {
+	b, err := os.ReadFile("testdata/perccli_2xsata.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "out.json")
+	if err := os.WriteFile(fixture, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tool := filepath.Join(dir, "perccli64")
+	script := "#!/bin/sh\n[ \"$1 $2 $3\" = '/call/eall/sall show J' ] || exit 3\ncat " + fixture + "\n"
+	if err := os.WriteFile(tool, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l := &Lister{LookPath: func(n string) (string, error) {
+		if n == "perccli64" {
+			return tool, nil
+		}
+		return "", errors.New("no")
+	}}
+	d, err := l.List(context.Background())
+	if err != nil || len(d) != 2 || d[0].Tool != "perccli64" {
+		t.Fatalf("%v %+v", err, d)
+	}
+
+	// A tool that fails both forms reports the error.
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.List(context.Background()); err == nil {
+		t.Fatal("failing tool reported no error")
+	}
+	// A tool that answers with no drives says so.
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\necho '{\"Controllers\":[]}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.List(context.Background()); err == nil || !strings.Contains(err.Error(), "no drives") {
+		t.Fatalf("empty tool: %v", err)
 	}
 }
