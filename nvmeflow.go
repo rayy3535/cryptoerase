@@ -126,6 +126,15 @@ func (r *runner) nvmeDrive(ctx context.Context, c nvmeCtrl) *DriveRecord {
 	}
 
 	marks := map[string]*markers{}
+	releaseMarks := func() {
+		for _, m := range marks {
+			m.release()
+		}
+	}
+	// On an early return the write handles close here, possibly while the
+	// drive is still busy; on success they are released right after the
+	// erase, below.
+	defer releaseMarks()
 	for _, ns := range c.namespaces {
 		m, err := r.writeMarkers(r.devPath(ns))
 		if err != nil {
@@ -184,6 +193,7 @@ func (r *runner) nvmeDrive(ctx context.Context, c nvmeCtrl) *DriveRecord {
 		}
 	}
 	rec.EraseDurationSec = seconds(time.Since(start))
+	releaseMarks() // the erase is over: udev may probe the namespaces now
 	if err := dev.Rescan(); err != nil {
 		rec.DeviceStatus.RescanError = err.Error()
 	}

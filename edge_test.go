@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,7 +31,22 @@ type nvmeHook struct {
 	sanitizeLog  func() (*nvme.SanitizeLog, error)
 	smartLog     func() (*nvme.SmartLog, error)
 	sanitize     func(nvme.SanitizeAction, bool) error
+	format       func(uint32, nvme.FormatSpec, time.Duration) error
 	rescan       func() error
+}
+
+func (n *nvmeHook) Format(nsid uint32, spec nvme.FormatSpec, timeout time.Duration) error {
+	if n.format != nil {
+		return n.format(nsid, spec, timeout)
+	}
+	return n.fakeNVMe.Format(nsid, spec, timeout)
+}
+
+func openTest(p string, write bool) (*blockdev.File, error) {
+	if write {
+		return blockdev.Open(p, false)
+	}
+	return blockdev.OpenReadOnly(p, false)
 }
 
 func (n *nvmeHook) IdentifyController() (*nvme.IdentifyController, error) {
@@ -172,9 +188,9 @@ func (f *faultyBlock) ReadAt(p []byte, off int64) (int, error) {
 // with openErr.
 func openFaulty(o *Options, n int32, openErr error, fault func(*faultyBlock)) {
 	var calls atomic.Int32
-	o.OpenBlock = func(p string, direct bool) (blockdev.Device, error) {
+	o.OpenBlock = func(p string, _, write bool) (blockdev.Device, error) {
 		// Regular files in t.TempDir() need not support O_DIRECT.
-		d, err := blockdev.Open(p, false)
+		d, err := openTest(p, write)
 		if err != nil {
 			return nil, err
 		}
@@ -352,8 +368,10 @@ func TestOptionsValidation(t *testing.T) {
 	if _, err := v.OpenNVMe(filepath.Join(t.TempDir(), "nvme0")); err == nil {
 		t.Error("OpenNVMe on missing path")
 	}
-	if _, err := v.OpenBlock(filepath.Join(t.TempDir(), "sda"), false); err == nil {
-		t.Error("OpenBlock on missing path")
+	for _, w := range []bool{true, false} {
+		if _, err := v.OpenBlock(filepath.Join(t.TempDir(), "sda"), false, w); err == nil {
+			t.Errorf("OpenBlock(write=%v) on missing path", w)
+		}
 	}
 	if ModeInventory.String() != "inventory" || ModeErase.String() != "erase" {
 		t.Error("Mode.String")
@@ -642,5 +660,121 @@ func TestPERCListError(t *testing.T) {
 	}
 	if c := h.perc.calls.Load(); c != 1 {
 		t.Errorf("PERC listed %d times, want once", c)
+	}
+}
+
+// handleProbe tracks the block-device handles the marker code opens.
+type handleProbe struct {
+	mu      sync.Mutex
+	writers map[string]int // open read-write handles per device name
+	opens   map[string][]string
+}
+
+func newHandleProbe(o *Options) *handleProbe {
+	p := &handleProbe{writers: map[string]int{}, opens: map[string][]string{}}
+	o.OpenBlock = func(path string, _, write bool) (blockdev.Device, error) {
+		d, err := openTest(path, write)
+		if err != nil {
+			return nil, err
+		}
+		name := filepath.Base(path)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		mode := "ro"
+		if write {
+			mode = "rw"
+			p.writers[name]++
+		}
+		p.opens[name] = append(p.opens[name], mode)
+		return &probeDev{Device: d, p: p, name: name, write: write}, nil
+	}
+	return p
+}
+
+func (p *handleProbe) open(name string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.writers[name]
+}
+
+type probeDev struct {
+	blockdev.Device
+	p      *handleProbe
+	name   string
+	write  bool
+	closed bool
+}
+
+func (d *probeDev) Close() error {
+	d.p.mu.Lock()
+	if d.write && !d.closed {
+		d.p.writers[d.name]--
+	}
+	d.closed = true
+	d.p.mu.Unlock()
+	return d.Device.Close()
+}
+
+// TestMarkerHandleSpansErase checks that the read-write handle used for the
+// markers is still open while the erase command runs (so closing it cannot
+// make udev read a drive that is sanitizing), is closed before the namespace
+// rescan and verification, and that verification opens the device
+// read-only.
+func TestMarkerHandleSpansErase(t *testing.T) {
+	h := newHost(t)
+	san := h.addNVMe("nvme0", nvmeSpec{sanicap: 1})
+	fmtd := h.addNVMe("nvme1", nvmeSpec{fna: 4})
+	h.addNVMe("nvme2", nvmeSpec{sanicap: 1, behaviour: "reject"})
+	h.addSCSI("sda", scsiSpec{vendor: "ATA", driver: "ahci", ata: &fakeATADisk{words: ataWords("M", "S", "F", true, false)}})
+
+	o := h.options(ModeErase)
+	o.AllowFormat = true
+	p := newHandleProbe(&o)
+	var mu sync.Mutex
+	during := map[string]int{}
+	note := func(k, name string) {
+		n := p.open(name)
+		mu.Lock()
+		during[k] = n
+		mu.Unlock()
+	}
+	h.hookNVMe(&o, map[string]*nvmeHook{
+		"nvme0": {fakeNVMe: san,
+			sanitize: func(a nvme.SanitizeAction, ause bool) error {
+				note("sanitize", "nvme0n1")
+				return san.Sanitize(a, ause)
+			},
+			rescan: func() error { note("rescan", "nvme0n1"); return san.Rescan() },
+		},
+		"nvme1": {fakeNVMe: fmtd, format: func(nsid uint32, spec nvme.FormatSpec, to time.Duration) error {
+			note("format", "nvme1n1")
+			return fmtd.Format(nsid, spec, to)
+		}},
+	})
+	hk := &ataHook{fakeATA: h.ata, scramble: func(dev string) (error, bool) {
+		note("scramble", filepath.Base(dev))
+		return nil, false
+	}}
+	o.ATA = hk
+	rep := h.run(o)
+
+	wantResult(t, rep, "nvme0", Pass, "")
+	wantResult(t, rep, "nvme1", Pass, "")
+	wantResult(t, rep, "nvme2", Fail, "rejected")
+	wantResult(t, rep, "sda", Pass, "")
+	for k, want := range map[string]int{"sanitize": 1, "format": 1, "scramble": 1, "rescan": 0} {
+		if during[k] != want {
+			t.Errorf("open read-write handles during %s: %d, want %d", k, during[k], want)
+		}
+	}
+	for _, name := range []string{"nvme0n1", "nvme1n1", "sda"} {
+		if got := strings.Join(p.opens[name], ","); got != "rw,ro" {
+			t.Errorf("%s opened %s, want rw,ro", name, got)
+		}
+	}
+	for name, n := range p.writers {
+		if n != 0 {
+			t.Errorf("%s: %d read-write handles left open", name, n)
+		}
 	}
 }

@@ -135,6 +135,7 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 		}
 		return r.done(rec, Fail, fmt.Sprintf("cannot write markers before erase (locked or read-only?): %v", err))
 	}
+	defer m.release()
 
 	start := time.Now()
 	if err := r.opts.ATA.SanitizeCryptoScramble(ctx, dev); err != nil {
@@ -152,6 +153,7 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 		return r.done(rec, Fail, "sanitize did not report 'Completed Without Error'")
 	}
 	rec.EraseDurationSec = seconds(time.Since(start))
+	m.release() // the erase is over: udev may probe the disk now
 
 	v, verr := r.verifyMarkers(dev, m)
 	if verr != nil {
