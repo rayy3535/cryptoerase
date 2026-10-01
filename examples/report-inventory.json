@@ -1,0 +1,218 @@
+{
+  "schema": "cryptoerase.report/v1",
+  "mode": "inventory",
+  "job_id": "EXAMPLE-JOB-0001",
+  "host": {
+    "manufacturer": "Example Vendor",
+    "product": "Example Server",
+    "serial": "EXAMPLE01",
+    "hostname": "example-host",
+    "kernel": "6.8.0-example"
+  },
+  "tool": {
+    "name": "cryptoerase",
+    "version": "0.1.0",
+    "go_version": "go1.22",
+    "nvme_transport": "Linux NVME_IOCTL_ADMIN_CMD",
+    "ata_backend": "hdparm v9.65"
+  },
+  "policy": {
+    "allow_format": true,
+    "samples": 16,
+    "firmware_rules": [
+      "P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV1DP ; VDV1DP25 ; Dell DSA-2022-203 (INTEL-SA-00535 / SOLIDIGM-SA-00563)",
+      "P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV10 ; VDV10184 ; INTEL-SA-00535 (fixed VDV10182), SOLIDIGM-SA-00563 (VDV10184)"
+    ]
+  },
+  "started_at": "2026-01-01T00:00:00Z",
+  "finished_at": "2026-01-01T00:00:40Z",
+  "result": "INCOMPLETE",
+  "counts": {
+    "PLANNED": 3,
+    "UNHANDLED": 1
+  },
+  "drives": [
+    {
+      "device": "/dev/nvme0",
+      "interface": "NVMe",
+      "media_type": "SSD (NVMe)",
+      "namespaces": [
+        "/dev/nvme0n1"
+      ],
+      "model": "EXAMPLE NVME SSD 6.4TB (Sanitize)",
+      "serial": "EXAMPLENVME0001",
+      "firmware": "1.0",
+      "capacity_bytes": 67108864,
+      "nvme": {
+        "version": "1.3.0",
+        "oacs": 3,
+        "sanicap": 7,
+        "fna": 4,
+        "tnvmcap": 67108864,
+        "unvmcap": 0,
+        "sanitize_crypto_erase": true,
+        "sanitize_block_erase": true,
+        "sanitize_overwrite": true,
+        "format_crypto_erase": true,
+        "format_applies_to_all_namespaces": false,
+        "secure_erase_applies_to_all_namespaces": false
+      },
+      "tcg": {
+        "ssc": [
+          "Opal 2"
+        ],
+        "has_locking_feature": true,
+        "locking_supported": true,
+        "locking_enabled": false,
+        "locked": false,
+        "media_encryption": true,
+        "mbr_enabled": false,
+        "mbr_done": false
+      },
+      "health": {
+        "critical_warning": 0,
+        "available_spare": 100,
+        "available_spare_threshold": 10,
+        "percentage_used": 0
+      },
+      "firmware_policy": {
+        "status": "no_rule"
+      },
+      "nist_method": "Purge",
+      "technique": "Cryptographic Erase",
+      "technique_detail": "NVMe Sanitize, SANACT=100b (Crypto Erase)",
+      "scope": "entire NVM subsystem: all namespaces, unallocated capacity, caches",
+      "command": "Sanitize (opcode 84h) CDW10=0xc on /dev/nvme0",
+      "planned": "nvme-sanitize-crypto-erase",
+      "result": "PLANNED",
+      "started_at": "2026-01-01T00:00:00Z",
+      "finished_at": "2026-01-01T00:00:30Z"
+    },
+    {
+      "device": "/dev/nvme1",
+      "interface": "NVMe",
+      "media_type": "SSD (NVMe)",
+      "namespaces": [
+        "/dev/nvme1n1"
+      ],
+      "model": "EXAMPLE NVME SSD 960GB (Format only)",
+      "serial": "EXAMPLENVME0002",
+      "firmware": "1.0",
+      "capacity_bytes": 67108864,
+      "nvme": {
+        "version": "1.3.0",
+        "oacs": 2,
+        "sanicap": 0,
+        "fna": 4,
+        "tnvmcap": 67108864,
+        "unvmcap": 0,
+        "sanitize_crypto_erase": false,
+        "sanitize_block_erase": false,
+        "sanitize_overwrite": false,
+        "format_crypto_erase": true,
+        "format_applies_to_all_namespaces": false,
+        "secure_erase_applies_to_all_namespaces": false
+      },
+      "health": {
+        "critical_warning": 0,
+        "available_spare": 100,
+        "available_spare_threshold": 10,
+        "percentage_used": 0
+      },
+      "firmware_policy": {
+        "status": "no_rule"
+      },
+      "nist_method": "Purge",
+      "technique": "Cryptographic Erase",
+      "technique_detail": "NVMe Format NVM, SES=010b (Cryptographic Erase)",
+      "scope": "all user data of the formatted namespace(s)",
+      "command": "Format NVM (opcode 80h) per namespace, SES=010b, current LBA format / metadata / PI kept",
+      "planned": "nvme-format-ses2",
+      "result": "PLANNED",
+      "started_at": "2026-01-01T00:00:00Z",
+      "finished_at": "2026-01-01T00:00:30Z"
+    },
+    {
+      "device": "/dev/sda",
+      "capacity_bytes": 67108864,
+      "attach": {
+        "driver": "megaraid_sas",
+        "scsi_vendor": "DELL",
+        "scsi_model": "PERC Example Front"
+      },
+      "perc": {
+        "physical_drives": [
+          {
+            "controller": 0,
+            "slot": "64:0",
+            "did": 0,
+            "state": "Onln",
+            "dg": 0,
+            "intf": "SATA",
+            "media": "SSD",
+            "sed": "N",
+            "model": "EXAMPLE SATA SSD 960GB",
+            "tool": "perccli64"
+          },
+          {
+            "controller": 0,
+            "slot": "64:1",
+            "did": 1,
+            "state": "Onln",
+            "dg": 0,
+            "intf": "SATA",
+            "media": "SSD",
+            "sed": "N",
+            "model": "EXAMPLE SATA SSD 960GB",
+            "tool": "perccli64"
+          }
+        ]
+      },
+      "result": "UNHANDLED",
+      "reason": "PERC virtual disk; 2 physical drive(s) behind the controller, 0 SED. SED/ISE drives: delete the virtual disk, then crypto-erase via iDRAC/PERC. Other drives: set them non-RAID (or the controller to HBA mode) and rerun",
+      "started_at": "2026-01-01T00:00:00Z",
+      "finished_at": "2026-01-01T00:00:30Z"
+    },
+    {
+      "device": "/dev/sdb",
+      "interface": "SATA",
+      "media_type": "SSD (SATA)",
+      "model": "EXAMPLE SATA SSD 960GB",
+      "serial": "EXAMPLESATA01",
+      "firmware": "1.0",
+      "capacity_bytes": 67108864,
+      "attach": {
+        "driver": "ahci",
+        "scsi_vendor": "ATA",
+        "scsi_model": "MOCKMODEL"
+      },
+      "ata": {
+        "sanitize_feature_set": true,
+        "sanitize_crypto_scramble": true,
+        "sanitize_block_erase": true,
+        "sanitize_overwrite": false,
+        "non_rotating": true,
+        "security": {
+          "supported": true,
+          "enabled": false,
+          "locked": false,
+          "frozen": true,
+          "count_expired": false,
+          "enhanced_erase": false
+        }
+      },
+      "firmware_policy": {
+        "status": "no_rule"
+      },
+      "nist_method": "Purge",
+      "technique": "Cryptographic Erase",
+      "technique_detail": "ATA SANITIZE CRYPTO SCRAMBLE EXT",
+      "scope": "all user data on the device",
+      "command": "hdparm --yes-i-know-what-i-am-doing --sanitize-crypto-scramble /dev/sdb",
+      "planned": "ata-sanitize-crypto-scramble",
+      "result": "PLANNED",
+      "started_at": "2026-01-01T00:00:00Z",
+      "finished_at": "2026-01-01T00:00:30Z"
+    }
+  ]
+}

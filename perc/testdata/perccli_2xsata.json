@@ -1,0 +1,47 @@
+{
+"Controllers":[
+{
+	"Command Status" : {
+		"CLI Version" : "007.2306.0000.0000 Jan 12, 2023",
+		"Operating system" : "Linux 5.15.0",
+		"Controller" : 0,
+		"Status" : "Success",
+		"Description" : "Show Drive Information Succeeded."
+	},
+	"Response Data" : {
+		"Drive Information" : [
+			{
+				"EID:Slt" : "64:0",
+				"DID" : 0,
+				"State" : "Onln",
+				"DG" : 0,
+				"Size" : "893.750 GB",
+				"Intf" : "SATA",
+				"Med" : "SSD",
+				"SED" : "N",
+				"PI" : "N",
+				"SeSz" : "512B",
+				"Model" : "SAMSUNG MZ7LH960HAJR-00005          ",
+				"Sp" : "U",
+				"Type" : "-"
+			},
+			{
+				"EID:Slt" : "64:1",
+				"DID" : 1,
+				"State" : "Onln",
+				"DG" : 0,
+				"Size" : "893.750 GB",
+				"Intf" : "SATA",
+				"Med" : "SSD",
+				"SED" : "N",
+				"PI" : "N",
+				"SeSz" : "512B",
+				"Model" : "SAMSUNG MZ7LH960HAJR-00005          ",
+				"Sp" : "U",
+				"Type" : "-"
+			}
+		]
+	}
+}
+]
+}
