@@ -4,6 +4,7 @@ package cryptoerase
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,13 +14,13 @@ import (
 	"github.com/rayy3535/cryptoerase/perc"
 )
 
-// TestWriteExamples regenerates examples/*.json from a simulated host:
+// TestExamples checks that examples/*.json match what a simulated host
+// produces, so the published sample reports never drift from the code.
+// Regenerate them after an intended change with:
 //
-//	CRYPTOERASE_WRITE_EXAMPLES=1 go test -run TestWriteExamples .
-func TestWriteExamples(t *testing.T) {
-	if os.Getenv("CRYPTOERASE_WRITE_EXAMPLES") == "" {
-		t.Skip("set CRYPTOERASE_WRITE_EXAMPLES=1 to regenerate examples/")
-	}
+//	CRYPTOERASE_WRITE_EXAMPLES=1 go test -run TestExamples .
+func TestExamples(t *testing.T) {
+	update := os.Getenv("CRYPTOERASE_WRITE_EXAMPLES") != ""
 	for _, mode := range []Mode{ModeInventory, ModeErase} {
 		h := newHost(t)
 		write(t, filepath.Join(h.sys, "class/dmi/id/product_serial"), "EXAMPLE01\n")
@@ -30,8 +31,8 @@ func TestWriteExamples(t *testing.T) {
 		h.addSCSI("sda", scsiSpec{vendor: "DELL", model: "PERC Example Front", driver: "megaraid_sas"})
 		h.addSCSI("sdb", scsiSpec{vendor: "ATA", driver: "ahci", ata: &fakeATADisk{words: ataWords("EXAMPLE SATA SSD 960GB", "EXAMPLESATA01", "1.0", true, false)}})
 		h.perc.drives = []perc.Drive{
-			{Controller: ptr(0), Slot: "64:0", DID: ptr(0), State: "Onln", DG: 0, Interface: "SATA", Media: "SSD", SED: "N", Model: "EXAMPLE SATA SSD 960GB", Tool: "perccli64"},
-			{Controller: ptr(0), Slot: "64:1", DID: ptr(1), State: "Onln", DG: 0, Interface: "SATA", Media: "SSD", SED: "N", Model: "EXAMPLE SATA SSD 960GB", Tool: "perccli64"},
+			{Controller: new(0), Slot: "64:0", DID: new(0), State: "Onln", DG: 0, Interface: "SATA", Media: "SSD", SED: "N", Model: "EXAMPLE SATA SSD 960GB", Tool: "perccli64"},
+			{Controller: new(0), Slot: "64:1", DID: new(1), State: "Onln", DG: 0, Interface: "SATA", Media: "SSD", SED: "N", Model: "EXAMPLE SATA SSD 960GB", Tool: "perccli64"},
 		}
 		o := h.options(mode)
 		o.AllowFormat = true
@@ -40,7 +41,7 @@ func TestWriteExamples(t *testing.T) {
 
 		// Normalise the simulated environment.
 		rep.Host.Hostname, rep.Host.Kernel = "example-host", "6.8.0-example"
-		rep.Tool.GoVersion, rep.Tool.ATABackend = "go1.22", "hdparm v9.65"
+		rep.Tool.GoVersion, rep.Tool.ATABackend = "go1.27.1", "hdparm v9.65"
 		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		rep.StartedAt, rep.FinishedAt = base, base.Add(40*time.Second)
 		for _, d := range rep.Drives {
@@ -54,7 +55,35 @@ func TestWriteExamples(t *testing.T) {
 		out := strings.ReplaceAll(string(b), h.dev, "/dev")
 		out = strings.ReplaceAll(out, "SN-nvme0n1", "EXAMPLENVME0001")
 		out = strings.ReplaceAll(out, "SN-nvme1n1", "EXAMPLENVME0002")
-		must(t, os.MkdirAll("examples", 0o755))
-		must(t, os.WriteFile(filepath.Join("examples", "report-"+mode.String()+".json"), []byte(out+"\n"), 0o644))
+		out += "\n"
+		path := filepath.Join("examples", "report-"+mode.String()+".json")
+		if update {
+			must(t, os.MkdirAll("examples", 0o755))
+			must(t, os.WriteFile(path, []byte(out), 0o644))
+			continue
+		}
+		want, err := os.ReadFile(path)
+		must(t, err)
+		if string(want) != out {
+			t.Errorf("%s is stale; regenerate with CRYPTOERASE_WRITE_EXAMPLES=1 go test -run TestExamples .\n%s", path, firstDiff(string(want), out))
+		}
 	}
+}
+
+// firstDiff returns the first differing line of two texts.
+func firstDiff(a, b string) string {
+	al, bl := strings.Split(a, "\n"), strings.Split(b, "\n")
+	for i := range max(len(al), len(bl)) {
+		var x, y string
+		if i < len(al) {
+			x = al[i]
+		}
+		if i < len(bl) {
+			y = bl[i]
+		}
+		if x != y {
+			return fmt.Sprintf("line %d:\n  file: %s\n  code: %s", i+1, x, y)
+		}
+	}
+	return ""
 }

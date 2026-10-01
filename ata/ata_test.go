@@ -18,7 +18,7 @@ func ataString(w []uint16, first, n int, s string) {
 	for len(b) < 2*n {
 		b = append(b, ' ')
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		w[first+i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
 	}
 }
@@ -42,7 +42,7 @@ func identifyWords(model, serial, fw string, w59, w128 uint16, ssd bool) []uint1
 func istdout(w []uint16) string {
 	var sb strings.Builder
 	for i := 0; i < 256; i += 8 {
-		for j := 0; j < 8; j++ {
+		for j := range 8 {
 			if j > 0 {
 				sb.WriteByte(' ')
 			}

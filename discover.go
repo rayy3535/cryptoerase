@@ -177,7 +177,7 @@ func (r *runner) scsiDriver(name string) string {
 	if err != nil {
 		return "unknown"
 	}
-	for _, part := range strings.Split(real, string(filepath.Separator)) {
+	for part := range strings.SplitSeq(real, string(filepath.Separator)) {
 		if strings.HasPrefix(part, "host") && len(part) > 4 && strings.Trim(part[4:], "0123456789") == "" {
 			if d := readTrim(filepath.Join(r.opts.SysfsRoot, "class", "scsi_host", part, "proc_name")); d != "" {
 				return d

@@ -65,15 +65,12 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 	var jobs []job
 	for _, c := range inv.nvme {
-		c := c
 		jobs = append(jobs, job{r.devPath(c.name), func(ctx context.Context) *DriveRecord { return r.nvmeDrive(ctx, c) }})
 	}
 	for _, s := range inv.scsi {
-		s := s
 		jobs = append(jobs, job{r.devPath(s), func(ctx context.Context) *DriveRecord { return r.scsiDrive(ctx, s) }})
 	}
 	for _, s := range inv.other {
-		s := s
 		jobs = append(jobs, job{r.devPath(s), func(ctx context.Context) *DriveRecord { return r.otherDrive(s) }})
 	}
 
@@ -85,9 +82,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	sem := make(chan struct{}, max(par, 1))
 	var wg sync.WaitGroup
 	for i, j := range jobs {
-		wg.Add(1)
-		go func(i int, j job) {
-			defer wg.Done()
+		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			defer func() {
@@ -98,7 +93,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 				}
 			}()
 			results[i] = j.fn(ctx)
-		}(i, j)
+		})
 	}
 	wg.Wait()
 
@@ -180,6 +175,9 @@ func (r *runner) otherDrive(name string) *DriveRecord {
 	rec := r.newRecord(r.devPath(name))
 	if readTrim(filepath.Join(r.opts.SysfsRoot, "block", name, "removable")) == "1" {
 		return r.done(rec, Skipped, "removable device")
+	}
+	if r.inUse[name] {
+		return r.done(rec, Unhandled, "unsupported device type, in use by the running OS")
 	}
 	return r.done(rec, Unhandled, "unsupported device type")
 }

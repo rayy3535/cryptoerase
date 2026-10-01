@@ -153,10 +153,7 @@ func ParseIdentifyNamespace(b []byte) (*IdentifyNamespace, error) {
 		FLBAS: b[26],
 		DPS:   b[29],
 	}
-	n := int(ns.NLBAF) + 1
-	if n > 64 {
-		n = 64
-	}
+	n := min(int(ns.NLBAF)+1, 64)
 	for i := 0; i < n; i++ {
 		o := 128 + 4*i
 		ns.LBAF = append(ns.LBAF, LBAFormat{

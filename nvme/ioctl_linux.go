@@ -55,6 +55,10 @@ type passthruCmd struct {
 type Controller struct {
 	f    *os.File
 	path string
+	// ioctl issues one request; cmd is nil for requests without an argument.
+	// It returns the ioctl return value (the NVMe status for admin commands).
+	// Tests replace it to inspect exactly what would be sent to the kernel.
+	ioctl func(req uintptr, cmd *passthruCmd, data []byte) (uintptr, syscall.Errno)
 }
 
 // OpenController opens the controller character device.
@@ -63,11 +67,24 @@ func OpenController(path string) (*Controller, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Controller{f: f, path: path}, nil
+	c := &Controller{f: f, path: path}
+	c.ioctl = c.sysIoctl
+	return c, nil
+}
+
+func (c *Controller) sysIoctl(req uintptr, cmd *passthruCmd, data []byte) (uintptr, syscall.Errno) {
+	r1, _, errno := syscall.Syscall(syscall.SYS_IOCTL, c.f.Fd(), req, uintptr(unsafe.Pointer(cmd)))
+	runtime.KeepAlive(data)
+	return r1, errno
 }
 
 // Close closes the device.
-func (c *Controller) Close() error { return c.f.Close() }
+func (c *Controller) Close() error {
+	if c.f == nil {
+		return nil
+	}
+	return c.f.Close()
+}
 
 // Path returns the device path.
 func (c *Controller) Path() string { return c.path }
@@ -90,8 +107,7 @@ func (c *Controller) admin(op string, cmd *passthruCmd, data []byte) (uint32, er
 	if cmd.TimeoutMs == 0 {
 		cmd.TimeoutMs = uint32(defaultTimeout / time.Millisecond)
 	}
-	r1, _, errno := syscall.Syscall(syscall.SYS_IOCTL, c.f.Fd(), ioctlAdminCmd, uintptr(unsafe.Pointer(cmd)))
-	runtime.KeepAlive(data)
+	r1, errno := c.ioctl(ioctlAdminCmd, cmd, data)
 	if errno != 0 {
 		return 0, fmt.Errorf("nvme %s on %s: %w", op, c.path, errno)
 	}
@@ -181,8 +197,7 @@ func (c *Controller) SecurityReceive(secp uint8, spsp uint16, size int) ([]byte,
 // Rescan asks the kernel to rescan the controller's namespaces, so block
 // devices reflect a format or sanitize.
 func (c *Controller) Rescan() error {
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, c.f.Fd(), ioctlRescan, 0)
-	if errno != 0 {
+	if _, errno := c.ioctl(ioctlRescan, nil, nil); errno != 0 {
 		return fmt.Errorf("nvme rescan on %s: %w", c.path, errno)
 	}
 	return nil

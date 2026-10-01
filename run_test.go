@@ -13,8 +13,6 @@ import (
 	"github.com/rayy3535/cryptoerase/perc"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func TestMixedHost(t *testing.T) {
 	h := newHost(t)
 	n0 := h.addNVMe("nvme0", nvmeSpec{sanicap: 7})
@@ -308,8 +306,8 @@ func TestPERCVirtualDisk(t *testing.T) {
 	h.addSCSI("sda", scsiSpec{vendor: "DELL", model: "PERC H355 Front", driver: "megaraid_sas"})
 	h.addSCSI("sdb", scsiSpec{vendor: "DELL", model: "PERC H355 Front", driver: "megaraid_sas"})
 	h.perc.drives = []perc.Drive{
-		{Controller: ptr(0), Slot: "64:0", SED: "N", Model: "SAMSUNG MZ7LH960HAJR-00005", Interface: "SATA", Media: "SSD", Tool: "perccli64"},
-		{Controller: ptr(0), Slot: "64:1", SED: "Y", Model: "SED DRIVE", Interface: "SATA", Media: "SSD", Tool: "perccli64"},
+		{Controller: new(0), Slot: "64:0", SED: "N", Model: "SAMSUNG MZ7LH960HAJR-00005", Interface: "SATA", Media: "SSD", Tool: "perccli64"},
+		{Controller: new(0), Slot: "64:1", SED: "Y", Model: "SED DRIVE", Interface: "SATA", Media: "SSD", Tool: "perccli64"},
 	}
 	rep := h.run(h.options(ModeErase))
 	if rep.ExitCode() != 2 {
@@ -345,7 +343,7 @@ func TestMultipathNamespaceMapping(t *testing.T) {
 
 func TestParallelismBound(t *testing.T) {
 	h := newHost(t)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		h.addNVMe("nvme"+string(rune('0'+i)), nvmeSpec{sanicap: 1})
 	}
 	o := h.options(ModeErase)

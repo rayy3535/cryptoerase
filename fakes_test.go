@@ -406,7 +406,7 @@ func ataWords(model, serial, fw string, crypto, locked bool) []uint16 {
 		for len(b) < 2*n {
 			b = append(b, ' ')
 		}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			w[first+i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
 		}
 	}

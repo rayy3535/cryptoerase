@@ -88,6 +88,7 @@ func runCommand(ctx context.Context, path string, args ...string) ([]byte, error
 	var out bytes.Buffer
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdout = &out
+	cmd.WaitDelay = 5 * time.Second
 	err := cmd.Run()
 	return out.Bytes(), err
 }

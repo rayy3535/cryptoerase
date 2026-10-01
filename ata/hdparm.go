@@ -54,6 +54,9 @@ func (h *Hdparm) run(ctx context.Context, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	// If hdparm is killed on timeout but something still holds its output
+	// pipes, stop waiting for them shortly after.
+	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Run(); err != nil {
 		return stdout.String(), &HdparmError{Args: args, Err: err, Stderr: stderr.String() + stdout.String()}
 	}
@@ -73,7 +76,7 @@ func (h *Hdparm) Identify(ctx context.Context, dev string) (*Identify, error) {
 // hex words in host byte order.
 func ParseIstdout(out string) (*Identify, error) {
 	words := make([]uint16, 0, 256)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		f := strings.Fields(line)
 		if len(f) != 8 {
 			continue
