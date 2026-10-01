@@ -4,31 +4,177 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: local # use exactly the Go from go.mod, installed by setup-go
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go: ["1.22", "stable"]
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: ${{ matrix.go }}
-      - name: gofmt
-        run: make fmt-check
-      - name: vet
-        run: make vet
-      - name: test
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+      - name: gofmt, go mod tidy, go vet, staticcheck, actionlint
+        run: make lint
+      - name: govulncheck
+        run: make vulncheck
+
+  test:
+    name: test (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+      - name: Unit tests (race detector, shuffled)
         run: make test
-      - name: build (linux amd64 + arm64, static)
-        run: make release
-      - uses: actions/upload-artifact@v4
-        if: matrix.go == 'stable'
+      - name: Coverage (minimum 90%)
+        run: make cover
+      - name: Coverage summary
+        if: always()
+        run: |
+          [ -f coverage.out ] || exit 0
+          {
+            echo "### Coverage, linux/${{ matrix.arch }}"
+            echo
+            echo '| Functions under 80%, and total | Coverage |'
+            echo '|---|---|'
+            go tool cover -func=coverage.out | awk '{ sub("github.com/rayy3535/cryptoerase", ".", $1); printf "| %s %s | %s |\n", $1, $2, $3 }' | awk -F'|' '$3+0 < 80 || /total:/'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: matrix.arch == 'amd64'
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 14
+
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+      - name: Fuzz every parser (20 s each)
+        run: make fuzz FUZZTIME=20s
+      - name: Upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-failures
+          path: '**/testdata/fuzz/**'
+
+  integration:
+    name: integration (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+      - name: Kernel tests (loop device, O_DIRECT, read-only NVMe identify)
+        run: make integration
+      - name: CLI smoke test (inventory only; never erases)
+        run: |
+          make build
+          ./bin/cryptoerase --version
+
+          # Without --yes the tool must refuse before touching anything.
+          if ./bin/cryptoerase --report refused.json; then echo "erase ran without --yes"; exit 1; fi
+          [ ! -e refused.json ]
+
+          set +e
+          sudo ./bin/cryptoerase --inventory --job-id "ci-${GITHUB_RUN_ID}" --report inventory.json --log-format json
+          code=$?
+          set -e
+          echo "exit code: $code"
+          case $code in 0|1|2) ;; *) exit 1 ;; esac
+          sudo chown "$(id -u)" inventory.json
+
+          jq -e '.schema == "cryptoerase.report/v1" and .mode == "inventory" and .job_id == "ci-\(env.GITHUB_RUN_ID)"' inventory.json
+          jq -e '[.drives[] | select(.device_status != null or .verification != null or .erase_duration_s != null)] | length == 0' inventory.json
+          jq -e '[.drives[] | select(.result as $r | ["PLANNED","UNHANDLED","SKIPPED","FAIL"] | index($r) | not)] | length == 0' inventory.json
+
+          {
+            echo "### Inventory of the runner, linux/${{ matrix.arch }} (exit $code)"
+            echo
+            echo '| Device | Model | Result | Reason |'
+            echo '|---|---|---|---|'
+            jq -r '.drives[] | "| \(.device) | \(.model // .attach.scsi_model // "-") | \(.result) | \(.reason // "") |"' inventory.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: inventory-${{ matrix.arch }}
+          path: inventory.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+      - name: Static linux/amd64 and linux/arm64 binaries
+        run: |
+          make release
+          ./dist/cryptoerase-linux-amd64 --version
+          file dist/cryptoerase-linux-* | tee /dev/stderr | grep -c 'statically linked' | grep -qx 2
+          cat dist/SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cryptoerase-linux
           path: dist/
+          retention-days: 14

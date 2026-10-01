@@ -13,3 +13,8 @@ First public version.
 - Listing of the physical drives behind Dell PERC / Broadcom MegaRAID virtual disks via perccli or storcli.
 - Concurrent processing with an optional bound; cancellation on SIGINT/SIGTERM.
 - JSON report with fields that follow NIST SP 800-88r2 §4.6.
+- Requires Go 1.27.1 to build.
+- `--version` also prints the VCS revision and Go version the binary was built with.
+- `--inventory` and `--yes` together, an unknown `--log-format`, and negative durations are rejected as bad arguments.
+- hdparm and perccli/storcli calls stop waiting for output pipes 5 s after a timeout kills the tool.
+- Release binaries are built in GitHub Actions with SLSA build provenance; CI covers linux/amd64 and linux/arm64 with race-enabled tests, a 90% coverage floor, fuzzing, kernel integration tests, staticcheck, govulncheck, CodeQL and OpenSSF Scorecard.
