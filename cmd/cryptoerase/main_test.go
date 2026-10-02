@@ -16,6 +16,7 @@ import (
 
 	"github.com/rayy3535/cryptoerase"
 	"github.com/rayy3535/cryptoerase/ata"
+	"github.com/rayy3535/cryptoerase/perc"
 )
 
 // fakeRun replaces the library for one test and records the Options it got.
@@ -109,7 +110,7 @@ func TestFlagsMapToOptions(t *testing.T) {
 	code := run([]string{
 		"--yes", "--allow-format", "--raid-reset", "--job-id", "JOB-1", "--samples", "4", "--parallel", "2",
 		"--poll-interval", "3s", "--no-progress-timeout", "7m", "--format-timeout", "9m",
-		"--hdparm", "/opt/hdparm", "--exclude", "sda", "--exclude", "/dev/nvme1",
+		"--hdparm", "/opt/hdparm", "--raid-cli", "/opt/MegaRAID/perccli/perccli64", "--exclude", "sda", "--exclude", "/dev/nvme1",
 		"--fw-policy", pol, "--report", "r.json",
 	}, &out, &errb)
 	if code != 0 {
@@ -122,6 +123,9 @@ func TestFlagsMapToOptions(t *testing.T) {
 	}
 	if h, ok := got.ATA.(*ata.Hdparm); !ok || h.Path != "/opt/hdparm" {
 		t.Errorf("ATA backend %#v", got.ATA)
+	}
+	if l, ok := got.PERC.(*perc.Lister); !ok || l.Path != "/opt/MegaRAID/perccli/perccli64" {
+		t.Errorf("PERC backend %#v", got.PERC)
 	}
 	if strings.Join(got.Exclude, ",") != "sda,/dev/nvme1" {
 		t.Errorf("exclude %v", got.Exclude)

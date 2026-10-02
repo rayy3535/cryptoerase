@@ -17,8 +17,12 @@ import (
 	"time"
 )
 
-// Tools are tried in this order.
+// Tools are looked up in $PATH in this order, then in InstallDirs.
 var Tools = []string{"perccli64", "perccli", "storcli64", "storcli"}
+
+// InstallDirs are where the Dell and Broadcom packages install the CLIs;
+// they are often not in $PATH of a minimal environment.
+var InstallDirs = []string{"/opt/MegaRAID/perccli", "/opt/MegaRAID/storcli"}
 
 // Drive is one physical drive from the controller CLI.
 type Drive struct {
@@ -44,6 +48,9 @@ type Drive struct {
 
 // Lister runs a controller CLI. LookPath and Exec are overridable for tests.
 type Lister struct {
+	// Path is the CLI binary (perccli64, storcli64, ...). Empty: search
+	// Tools in $PATH, then in InstallDirs.
+	Path     string
 	LookPath func(string) (string, error)
 	Exec     func(ctx context.Context, path string, args ...string) ([]byte, error)
 	Timeout  time.Duration

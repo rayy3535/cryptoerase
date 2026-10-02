@@ -4,6 +4,7 @@
 
 First release with RAID controller support: `--raid-reset`, and cryptographic erase by the controller for SATA drives behind a Dell PERC / Broadcom MegaRAID whose ATA status does not come back. Both were added in 0.1.0-rc.3 (below) and tested on a PowerEdge R7525 with a PERC H355.
 
+- `--raid-cli PATH` (`perc.Lister.Path`) sets the perccli/storcli binary. Without it the CLI is searched in `$PATH`, then in `/opt/MegaRAID/perccli` and `/opt/MegaRAID/storcli`, where the Dell and Broadcom packages install it.
 - Controller erase of SATA drives behind a PERC: the markers' write handle stays open until the disk has been removed from the kernel. Closing it first made udev re-read the partition table, and that read raced with the removal: on a PERC H355 the kernel logged `I/O error, dev sda, sector 0`, `Buffer I/O error` and `unable to read RDB block 0` for the first drive erased. Erase results were not affected. If the disk cannot be removed, the handle is closed and udev gets 2 s before the controller hides the drive.
 
 ## v0.1.0-rc.3 (2026-10-02)

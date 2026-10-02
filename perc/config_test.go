@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -159,5 +160,45 @@ func TestConfigCommands(t *testing.T) {
 	none := &Lister{LookPath: func(string) (string, error) { return "", errors.New("no") }}
 	if _, err := none.DeleteVD(ctx, 0, 0); err == nil {
 		t.Error("no CLI accepted")
+	}
+}
+
+func TestToolLookup(t *testing.T) {
+	// An explicit path is used as given.
+	if p, n := (&Lister{Path: "/srv/bin/storcli64"}).tool(); p != "/srv/bin/storcli64" || n != "storcli64" {
+		t.Fatalf("explicit: %q %q", p, n)
+	}
+	// $PATH first, in Tools order.
+	inPath := &Lister{LookPath: func(n string) (string, error) {
+		if n == "storcli64" {
+			return "/usr/sbin/storcli64", nil
+		}
+		return "", errors.New("not found")
+	}}
+	if p, n := inPath.tool(); p != "/usr/sbin/storcli64" || n != "storcli64" {
+		t.Fatalf("PATH: %q %q", p, n)
+	}
+	// Then the package install directories.
+	var tried []string
+	opt := &Lister{LookPath: func(n string) (string, error) {
+		tried = append(tried, n)
+		if n == "/opt/MegaRAID/storcli/storcli64" {
+			return n, nil
+		}
+		return "", errors.New("not found")
+	}}
+	if p, n := opt.tool(); p != "/opt/MegaRAID/storcli/storcli64" || n != "storcli64" {
+		t.Fatalf("install dir: %q %q (tried %v)", p, n, tried)
+	}
+	if tried[4] != "/opt/MegaRAID/perccli/perccli64" {
+		t.Fatalf("search order %v", tried)
+	}
+}
+
+// A wrong explicit path is an error when run, not "no CLI installed".
+func TestExplicitPathMissing(t *testing.T) {
+	l := &Lister{Path: filepath.Join(t.TempDir(), "perccli64")}
+	if _, err := l.Controllers(context.Background()); err == nil || !strings.Contains(err.Error(), "perccli64") {
+		t.Fatalf("%v", err)
 	}
 }

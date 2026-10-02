@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -72,8 +73,13 @@ func (d Drive) dgNumber() int {
 // DriveGroup returns the drive group number, or -1 when the drive is in none.
 func (d Drive) DriveGroup() int { return d.dgNumber() }
 
-// tool locates the controller CLI; empty when none is installed.
+// tool locates the controller CLI; empty when none is installed. An
+// explicit Path is used as given: if it is wrong, running it fails with an
+// error rather than looking like no CLI is installed.
 func (l *Lister) tool() (path, name string) {
+	if l.Path != "" {
+		return l.Path, filepath.Base(l.Path)
+	}
 	look := l.LookPath
 	if look == nil {
 		look = exec.LookPath
@@ -81,6 +87,13 @@ func (l *Lister) tool() (path, name string) {
 	for _, t := range Tools {
 		if p, err := look(t); err == nil {
 			return p, t
+		}
+	}
+	for _, dir := range InstallDirs {
+		for _, t := range Tools {
+			if p, err := look(filepath.Join(dir, t)); err == nil {
+				return p, t
+			}
 		}
 	}
 	return "", ""

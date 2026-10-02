@@ -33,6 +33,7 @@ import (
 
 	"github.com/rayy3535/cryptoerase"
 	"github.com/rayy3535/cryptoerase/ata"
+	"github.com/rayy3535/cryptoerase/perc"
 )
 
 type stringList []string
@@ -91,6 +92,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		noProgress  = fs.Duration("no-progress-timeout", 20*time.Minute, "fail a sanitize whose progress does not change for this long")
 		formatTO    = fs.Duration("format-timeout", 10*time.Minute, "timeout per Format NVM command")
 		hdparm      = fs.String("hdparm", "hdparm", "hdparm binary used for SATA")
+		raidCLI     = fs.String("raid-cli", "", "PERC/MegaRAID CLI binary (perccli64 or storcli64); default: search $PATH, then /opt/MegaRAID/{perccli,storcli}")
 		logFormat   = fs.String("log-format", "text", "stderr log format: text or json")
 		showVersion = fs.Bool("version", false, "print version and exit")
 	)
@@ -145,6 +147,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		FormatTimeout:     *formatTO,
 		Logger:            logger,
 		ATA:               &ata.Hdparm{Path: *hdparm},
+		PERC:              &perc.Lister{Path: *raidCLI},
 	}
 	if *inventory {
 		opts.Mode = cryptoerase.ModeInventory

@@ -59,7 +59,7 @@ NIST SP 800-88r2 §4.5.1 asks for completion status, errors and device health, a
 
 - Linux, amd64 or arm64, running as root (admin passthrough needs `CAP_SYS_ADMIN`).
 - `hdparm` 9.56 or later if SATA drives are present.
-- Optional: `perccli64` or `storcli64` for RAID controller inventory; required for `--raid-reset`.
+- Optional: `perccli64` or `storcli64` for RAID controller inventory; required for `--raid-reset` and for SATA drives the controller erases. Found in `$PATH` or `/opt/MegaRAID/{perccli,storcli}`, or set with `--raid-cli`. It is looked for only when needed; if it is missing, the drives that need it are reported `UNHANDLED` or `FAIL` with that reason.
 
 The binary is static (`CGO_ENABLED=0`) and has no other runtime dependencies. It is meant to run from a minimal maintenance OS, for example a PXE-booted environment used between deployments.
 
@@ -107,6 +107,7 @@ cryptoerase --yes --job-id RECLAIM-1234 --report /var/tmp/erase.json
 | `--samples N` | Markers per namespace or disk. Default 16 |
 | `--poll-interval`, `--no-progress-timeout`, `--format-timeout` | Sanitize polling and timeouts |
 | `--hdparm PATH` | hdparm binary |
+| `--raid-cli PATH` | PERC/MegaRAID CLI (`perccli64` or `storcli64`). Default: search `$PATH`, then `/opt/MegaRAID/perccli` and `/opt/MegaRAID/storcli` |
 | `--log-format text\|json` | stderr log format |
 | `--version` | Print version, commit and Go version |
 
