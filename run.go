@@ -65,6 +65,9 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	// In-use disks are known before any RAID change, so a virtual disk that
 	// backs the running OS is never deleted.
 	r.inUse = r.computeInUse()
+	if err := r.preflight(ctx); err != nil {
+		return nil, err
+	}
 	if opts.RAIDReset {
 		rep.RAIDReset = r.raidReset(ctx)
 	}

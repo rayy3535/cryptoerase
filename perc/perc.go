@@ -17,8 +17,12 @@ import (
 	"time"
 )
 
-// Tools are tried in this order.
+// Tools are looked up in $PATH in this order, then in InstallDirs.
 var Tools = []string{"perccli64", "perccli", "storcli64", "storcli"}
+
+// InstallDirs are where the Dell and Broadcom packages install the CLIs;
+// they are often not in $PATH of a minimal environment.
+var InstallDirs = []string{"/opt/MegaRAID/perccli", "/opt/MegaRAID/storcli"}
 
 // Drive is one physical drive from the controller CLI.
 type Drive struct {
@@ -44,9 +48,32 @@ type Drive struct {
 
 // Lister runs a controller CLI. LookPath and Exec are overridable for tests.
 type Lister struct {
+	// Path is the CLI binary (perccli64, storcli64, ...). Empty: search
+	// Tools in $PATH, then in InstallDirs.
+	Path     string
 	LookPath func(string) (string, error)
 	Exec     func(ctx context.Context, path string, args ...string) ([]byte, error)
 	Timeout  time.Duration
+}
+
+// Check reports whether a controller CLI is available: Path if set (it must
+// exist and be executable), else one of Tools in $PATH or InstallDirs.
+func (l *Lister) Check(context.Context) error {
+	if l.Path != "" {
+		look := l.LookPath
+		if look == nil {
+			look = exec.LookPath
+		}
+		if _, err := look(l.Path); err != nil {
+			return fmt.Errorf("RAID controller CLI not found (%s): %w", l.Path, err)
+		}
+		return nil
+	}
+	if path, _ := l.tool(); path == "" {
+		return fmt.Errorf("RAID controller CLI not found: none of %s in $PATH or %s (install perccli64, or set its path)",
+			strings.Join(Tools, ", "), strings.Join(InstallDirs, ", "))
+	}
+	return nil
 }
 
 // List returns the physical drives, or nil with no error when no CLI is

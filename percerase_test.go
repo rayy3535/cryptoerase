@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rayy3535/cryptoerase/blockdev"
 	"github.com/rayy3535/cryptoerase/perc"
 )
 
@@ -82,6 +83,9 @@ func (f *fakeRAID) EraseStatus(_ context.Context, _ int, slot string) (perc.Eras
 }
 
 func (f *fakeRAID) Events(_ context.Context, _, n int) ([]perc.Event, error) {
+	if f.onEvents != nil {
+		f.onEvents()
+	}
 	if f.eventsErr != nil {
 		return nil, f.eventsErr
 	}
@@ -148,7 +152,7 @@ func TestPERCEraseSATA(t *testing.T) {
 		t.Fatalf("record %+v %+v", r, r.Verification)
 	}
 	// The disk was removed from the kernel before the controller hid it.
-	if b, err := os.ReadFile(filepath.Join(h.sys, "devices/pci0000:00", "host"+strconv.Itoa(3*7+int('a')), "target0:0:0", "0:0:0:sda", "delete")); err != nil || string(b) != "1" {
+	if b, err := os.ReadFile(sdaDeleteFile(h)); err != nil || string(b) != "1" {
 		t.Fatalf("delete: %q %v", b, err)
 	}
 }
@@ -237,4 +241,80 @@ func TestPERCEraseLockedDrive(t *testing.T) {
 	if len(f.calls) != 0 {
 		t.Fatalf("calls %v", f.calls)
 	}
+}
+
+// closeHook calls onClose before closing the device.
+type closeHook struct {
+	blockdev.Device
+	onClose func()
+}
+
+func (c closeHook) Close() error {
+	c.onClose()
+	return c.Device.Close()
+}
+
+// The markers' write handle must stay open until the disk is gone from the
+// kernel: closing it makes udev re-read the partition table, and on a PERC
+// H355 that re-read racing with the removal filled the kernel log with I/O
+// errors.
+func TestPERCEraseClosesWriteHandleAfterRemoval(t *testing.T) {
+	h, f, _ := percHost(t)
+	deleteFile := sdaDeleteFile(h)
+	o := percOptions(h, f, ModeErase)
+	var closes []bool // per write-handle close: was the disk removed already?
+	o.OpenBlock = func(p string, direct, write bool) (blockdev.Device, error) {
+		if !write {
+			return blockdev.OpenReadOnly(p, direct)
+		}
+		d, err := blockdev.Open(p, direct)
+		if err != nil {
+			return nil, err
+		}
+		return closeHook{d, func() {
+			_, err := os.Stat(deleteFile)
+			closes = append(closes, err == nil)
+		}}, nil
+	}
+	rep := h.run(o)
+	wantResult(t, rep, "sda", Pass, "")
+	if len(closes) != 1 || !closes[0] {
+		t.Fatalf("write handle closes (removed first?): %v", closes)
+	}
+}
+
+// If the disk cannot be removed from the kernel, the handle is closed and
+// udev gets time to re-read the partition table before the controller hides
+// the drive.
+func TestPERCEraseRemovalFails(t *testing.T) {
+	old := udevSettle
+	udevSettle = time.Millisecond
+	t.Cleanup(func() { udevSettle = old })
+	h, f, _ := percHost(t)
+	must(t, os.Mkdir(sdaDeleteFile(h), 0o755)) // writing to it fails
+	rep := h.run(percOptions(h, f, ModeErase))
+	wantResult(t, rep, "sda", Pass, "")
+	if strings.Join(f.calls, "|") != strings.Join(percCommands, "|") {
+		t.Fatalf("calls %v", f.calls)
+	}
+
+	// Interrupted while waiting for udev: nothing was changed on the
+	// controller.
+	udevSettle = time.Hour
+	h, f, _ = percHost(t)
+	must(t, os.Mkdir(sdaDeleteFile(h), 0o755))
+	ctx, cancel := context.WithCancel(context.Background())
+	f.onEvents = cancel
+	rep, err := Run(ctx, percOptions(h, f, ModeErase))
+	must(t, err)
+	wantResult(t, rep, "sda", Fail, "interrupted before erase")
+	if len(f.calls) != 0 {
+		t.Fatalf("calls %v", f.calls)
+	}
+}
+
+// sdaDeleteFile is the sysfs file that removes percHost's sda from the
+// kernel.
+func sdaDeleteFile(h *testHost) string {
+	return filepath.Join(h.sys, "devices/pci0000:00", "host"+strconv.Itoa(3*7+int('a')), "target0:0:0", "0:0:0:sda", "delete")
 }

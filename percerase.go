@@ -30,6 +30,11 @@ type PERCEraser interface {
 // the erase result.
 const eventWindow = 64
 
+// udevSettle is how long udev gets to re-read a disk's partition table after
+// the markers' write handle is closed, when the disk could not be removed
+// from the kernel first.
+var udevSettle = 2 * time.Second
+
 // percSATA handles a SATA drive whose ATA status does not come back through
 // its RAID controller (regErr wraps ata.ErrNoRegisters): the controller
 // crypto-erases the drive instead.
@@ -91,13 +96,14 @@ func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver st
 		}
 		return r.done(rec, Fail, fmt.Sprintf("cannot write markers before erase (locked or read-only?): %v", err))
 	}
-	// The disk is removed from the kernel next; nothing may hold it open.
-	m.release()
+	// The write handle stays open until the disk has been removed from the
+	// kernel (see percCryptoErase).
+	defer m.release()
 
 	start := time.Now()
 	host := r.scsiHost(name)
 	r.percMu.Lock()
-	jbodErr, eraseErr := r.percCryptoErase(ctx, pe, pr, name, host, d.Slot)
+	jbodErr, eraseErr := r.percCryptoErase(ctx, pe, pr, name, host, d.Slot, m)
 	r.percMu.Unlock()
 	switch {
 	case eraseErr != nil && jbodErr != nil:
@@ -162,7 +168,7 @@ func (r *runner) percDriveFor(ctx context.Context, pe PERCEraser, rec *DriveReco
 // percCryptoErase runs the controller commands. It records each command and
 // the outcome in pr. eraseErr is set when the erase did not run to a logged
 // result; jbodErr when the drive could not be set back to JBOD.
-func (r *runner) percCryptoErase(ctx context.Context, pe PERCEraser, pr *PERCErase, name, host, slot string) (jbodErr, eraseErr error) {
+func (r *runner) percCryptoErase(ctx context.Context, pe PERCEraser, pr *PERCErase, name, host, slot string, m *markers) (jbodErr, eraseErr error) {
 	c := pr.Controller
 	evs, err := pe.Events(ctx, c, 1)
 	if err != nil {
@@ -170,11 +176,21 @@ func (r *runner) percCryptoErase(ctx context.Context, pe PERCEraser, pr *PERCEra
 	}
 	base := perc.LatestSeq(evs)
 
-	// While unconfigured good the controller hides the drive; a read from
-	// the kernel's stale disk then fails with I/O errors in the kernel log.
+	// While unconfigured good the controller hides the drive, and any read
+	// of the kernel's disk fails with I/O errors in the kernel log. So the
+	// disk is removed from the kernel first, while the markers' write handle
+	// is still open: closing that handle makes udev re-read the partition
+	// table, and a re-read racing with the removal fails the same way. Once
+	// the disk is gone, closing the handle triggers nothing.
 	if err := r.detachSCSI(name); err != nil {
 		r.log.Warn("remove disk from kernel", "device", name, "error", err)
+		m.release()
+		// Let udev finish its re-read before the controller hides the drive.
+		if err := sleep(ctx, udevSettle); err != nil {
+			return nil, fmt.Errorf("interrupted before erase: %w; drive not modified", err)
+		}
 	}
+	m.release()
 	cmd, err := pe.SetGood(ctx, c, slot)
 	pr.Commands = append(pr.Commands, cmd)
 	if err != nil {

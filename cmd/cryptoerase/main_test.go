@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/rayy3535/cryptoerase"
 	"github.com/rayy3535/cryptoerase/ata"
+	"github.com/rayy3535/cryptoerase/perc"
 )
 
 // fakeRun replaces the library for one test and records the Options it got.
@@ -109,7 +111,7 @@ func TestFlagsMapToOptions(t *testing.T) {
 	code := run([]string{
 		"--yes", "--allow-format", "--raid-reset", "--job-id", "JOB-1", "--samples", "4", "--parallel", "2",
 		"--poll-interval", "3s", "--no-progress-timeout", "7m", "--format-timeout", "9m",
-		"--hdparm", "/opt/hdparm", "--exclude", "sda", "--exclude", "/dev/nvme1",
+		"--hdparm", "/opt/hdparm", "--raid-cli", "/opt/MegaRAID/perccli/perccli64", "--exclude", "sda", "--exclude", "/dev/nvme1",
 		"--fw-policy", pol, "--report", "r.json",
 	}, &out, &errb)
 	if code != 0 {
@@ -122,6 +124,9 @@ func TestFlagsMapToOptions(t *testing.T) {
 	}
 	if h, ok := got.ATA.(*ata.Hdparm); !ok || h.Path != "/opt/hdparm" {
 		t.Errorf("ATA backend %#v", got.ATA)
+	}
+	if l, ok := got.PERC.(*perc.Lister); !ok || l.Path != "/opt/MegaRAID/perccli/perccli64" {
+		t.Errorf("PERC backend %#v", got.PERC)
 	}
 	if strings.Join(got.Exclude, ",") != "sda,/dev/nvme1" {
 		t.Errorf("exclude %v", got.Exclude)
@@ -210,6 +215,16 @@ func TestRunErrorAndUnwritableReport(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run([]string{"--inventory"}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "boom") {
 		t.Fatalf("code %d stderr %q", code, errb.String())
+	}
+
+	fakeRun(t, nil, fmt.Errorf("%w; nothing was changed: SATA drive sda: hdparm not found", cryptoerase.ErrToolMissing))
+	errb.Reset()
+	if code := run([]string{"--yes"}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "required tool missing; nothing was changed") ||
+		!strings.Contains(errb.String(), "hdparm not found") {
+		t.Fatalf("code %d stderr %q", code, errb.String())
+	}
+	if entries, _ := os.ReadDir("."); len(entries) != 0 {
+		t.Fatalf("report written: %v", entries)
 	}
 
 	fakeRun(t, report("PASS"), nil)

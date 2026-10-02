@@ -59,7 +59,9 @@ NIST SP 800-88r2 §4.5.1 asks for completion status, errors and device health, a
 
 - Linux, amd64 or arm64, running as root (admin passthrough needs `CAP_SYS_ADMIN`).
 - `hdparm` 9.56 or later if SATA drives are present.
-- Optional: `perccli64` or `storcli64` for RAID controller inventory; required for `--raid-reset`.
+- `perccli64` or `storcli64` if disks on a PERC/MegaRAID controller are present, or with `--raid-reset`. Found in `$PATH` or `/opt/MegaRAID/{perccli,storcli}`, or set with `--raid-cli`.
+
+Before anything is written, the tool checks that what this host needs is there: hdparm when SATA drives are present, the controller CLI when PERC/MegaRAID disks are present or `--raid-reset` is given. Excluded, in-use, removable and USB disks do not count. If a tool is missing, it exits with code 1, naming the tool and the disk that needs it, and writes no report.
 
 The binary is static (`CGO_ENABLED=0`) and has no other runtime dependencies. It is meant to run from a minimal maintenance OS, for example a PXE-booted environment used between deployments.
 
@@ -107,6 +109,7 @@ cryptoerase --yes --job-id RECLAIM-1234 --report /var/tmp/erase.json
 | `--samples N` | Markers per namespace or disk. Default 16 |
 | `--poll-interval`, `--no-progress-timeout`, `--format-timeout` | Sanitize polling and timeouts |
 | `--hdparm PATH` | hdparm binary |
+| `--raid-cli PATH` | PERC/MegaRAID CLI (`perccli64` or `storcli64`). Default: search `$PATH`, then `/opt/MegaRAID/perccli` and `/opt/MegaRAID/storcli` |
 | `--log-format text\|json` | stderr log format |
 | `--version` | Print version, commit and Go version |
 
@@ -115,7 +118,7 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | 0 | Every in-scope drive was erased and verified. In inventory mode: every in-scope drive has a method |
-| 1 | At least one drive `FAIL`ed, no drive was found, or bad arguments |
+| 1 | At least one drive `FAIL`ed, no drive was found, bad arguments, or a required tool is missing |
 | 2 | No failures, but some drives are `UNHANDLED` and need another method before the server is released |
 
 A typical reclamation hook:
@@ -155,7 +158,7 @@ Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the cont
 Some controllers forward ATA commands to a non-RAID SATA drive but not the drive's registers, so the outcome of a sanitize cannot be read back. On a PERC H355 the answer is fixed-format sense with every register field zero, and hdparm reports `bad/missing sense data`. Behind a PERC/MegaRAID controller (`megaraid_sas`), such a drive is erased by the controller instead, if the controller reports it "Cryptographic Erase Capable" (ISE or SED drives):
 
 1. Write the markers through the OS.
-2. Remove the disk from the kernel (`/sys/block/sdX/device/delete`). The controller hides the drive in the next step, and reads of the stale disk would fail with I/O errors in the kernel log.
+2. Remove the disk from the kernel (`/sys/block/sdX/device/delete`). The controller hides the drive in the next step, and reads of the stale disk would fail with I/O errors in the kernel log. The markers' write handle is closed only after the removal: closing it makes udev re-read the partition table, and that read would race with the removal.
 3. `set good force`: the drive becomes unconfigured good, which the controller requires for an erase.
 4. `start erase crypto`.
 5. Wait for the result in the controller event log (`show events`): `Erase completed on PD 26(e0x44/s0)` or `Erase failed ...`. `show erase` cannot tell: it reads `Not in progress` both before and after an erase that takes no time.

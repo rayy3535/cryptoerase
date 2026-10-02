@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.0 (2026-10-02)
+
+First release with RAID controller support: `--raid-reset`, and cryptographic erase by the controller for SATA drives behind a Dell PERC / Broadcom MegaRAID whose ATA status does not come back. Both were added in 0.1.0-rc.3 (below) and tested on a PowerEdge R7525 with a PERC H355.
+
+- Missing tools stop the run before anything is written: hdparm when SATA drives are present, perccli/storcli when PERC/MegaRAID disks are present or `--raid-reset` is given (excluded, in-use, removable and USB disks do not count). `Run` returns `ErrToolMissing`, and the CLI exits with code 1 and no report. Before, each drive that needed the tool was reported `FAIL` or `UNHANDLED`. Backends can implement `Checker`; `ata.Hdparm` and `perc.Lister` do.
+- `--raid-cli PATH` (`perc.Lister.Path`) sets the perccli/storcli binary. Without it the CLI is searched in `$PATH`, then in `/opt/MegaRAID/perccli` and `/opt/MegaRAID/storcli`, where the Dell and Broadcom packages install it.
+- Controller erase of SATA drives behind a PERC: the markers' write handle stays open until the disk has been removed from the kernel. Closing it first made udev re-read the partition table, and that read raced with the removal: on a PERC H355 the kernel logged `I/O error, dev sda, sector 0`, `Buffer I/O error` and `unable to read RDB block 0` for the first drive erased. Erase results were not affected. If the disk cannot be removed, the handle is closed and udev gets 2 s before the controller hides the drive.
+
 ## v0.1.0-rc.3 (2026-10-02)
 
 - `--raid-reset` (`Options.RAIDReset`): on Dell PERC / Broadcom MegaRAID controllers, delete the virtual disks the running OS does not use, remove hot spares, set the drives to non-RAID, wait for them to appear, and erase each drive directly. Controllers with foreign configurations, failed or rebuilding drives, or a virtual disk that cannot be matched to its block device while the OS uses the controller are left unchanged. Exposed drives that never reach the OS are reported `FAIL`. With `--inventory`, only the plan is reported.

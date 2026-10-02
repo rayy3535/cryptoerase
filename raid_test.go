@@ -32,6 +32,7 @@ type fakeRAID struct {
 	outcome   map[string]string // slot -> completed (default) | failed | none | noop | progress
 	events    []perc.Event      // oldest first
 	eventsErr error
+	onEvents  func() // called on every Events
 }
 
 func (f *fakeRAID) List(context.Context) ([]perc.Drive, error) {
