@@ -191,18 +191,26 @@ func readTrim(path string) string {
 
 // scsiDriver returns the SCSI host driver (ahci, mpt3sas, megaraid_sas ...).
 func (r *runner) scsiDriver(name string) string {
-	resolved, err := filepath.EvalSymlinks(filepath.Join(r.opts.SysfsRoot, "block", name, "device"))
-	if err != nil {
-		return "unknown"
-	}
-	for part := range strings.SplitSeq(resolved, string(filepath.Separator)) {
-		if strings.HasPrefix(part, "host") && len(part) > 4 && strings.Trim(part[4:], "0123456789") == "" {
-			if d := readTrim(filepath.Join(r.opts.SysfsRoot, "class", "scsi_host", part, "proc_name")); d != "" {
-				return d
-			}
+	if host := r.scsiHost(name); host != "" {
+		if d := readTrim(filepath.Join(r.opts.SysfsRoot, "class", "scsi_host", host, "proc_name")); d != "" {
+			return d
 		}
 	}
 	return "unknown"
+}
+
+// scsiHost returns the SCSI host ("host0") a disk is attached to, or "".
+func (r *runner) scsiHost(name string) string {
+	resolved, err := filepath.EvalSymlinks(filepath.Join(r.opts.SysfsRoot, "block", name, "device"))
+	if err != nil {
+		return ""
+	}
+	for part := range strings.SplitSeq(resolved, string(filepath.Separator)) {
+		if strings.HasPrefix(part, "host") && len(part) > 4 && strings.Trim(part[4:], "0123456789") == "" {
+			return part
+		}
+	}
+	return ""
 }
 
 func (r *runner) host() Host {

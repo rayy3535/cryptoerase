@@ -25,6 +25,13 @@ type fakeRAID struct {
 	fail    map[string]error  // command -> error
 	mu      sync.Mutex
 	calls   []string
+
+	// Controller erase (PERCEraser).
+	good      map[string]string // slot -> disk that "set good" hides from the OS
+	media     map[string][]byte // slot -> contents while hidden
+	outcome   map[string]string // slot -> completed (default) | failed | none | noop | progress
+	events    []perc.Event      // oldest first
+	eventsErr error
 }
 
 func (f *fakeRAID) List(context.Context) ([]perc.Drive, error) {

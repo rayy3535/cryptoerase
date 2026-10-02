@@ -150,6 +150,21 @@ Every command run (or, with `--inventory`, planned) is in the report under `raid
 
 Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the controller and firmware; if IDENTIFY does not get through, the drive is reported `UNHANDLED` as usual.
 
+### SATA drives the controller erases
+
+Some controllers forward ATA commands to a non-RAID SATA drive but not the drive's registers, so the outcome of a sanitize cannot be read back. On a PERC H355 the answer is fixed-format sense with every register field zero, and hdparm reports `bad/missing sense data`. Behind a PERC/MegaRAID controller (`megaraid_sas`), such a drive is erased by the controller instead, if the controller reports it "Cryptographic Erase Capable" (ISE or SED drives):
+
+1. Write the markers through the OS.
+2. Remove the disk from the kernel (`/sys/block/sdX/device/delete`). The controller hides the drive in the next step, and reads of the stale disk would fail with I/O errors in the kernel log.
+3. `set good force`: the drive becomes unconfigured good, which the controller requires for an erase.
+4. `start erase crypto`.
+5. Wait for the result in the controller event log (`show events`): `Erase completed on PD 26(e0x44/s0)` or `Erase failed ...`. `show erase` cannot tell: it reads `Not in progress` both before and after an erase that takes no time.
+6. `set jbod`. This happens after a failed erase too, so the drive is left non-RAID as it was found.
+7. Wait for the disk to come back, matched by WWN or serial; its name may change.
+8. Verify the markers.
+
+The drive passes only with `Erase completed` in the event log and every marker changed. The commands, the event and the new device name are in the report under `device_status.perc_erase`. In `--inventory` the drive is `PLANNED` with method `perc-crypto-erase`. Drives that do not match exactly one controller drive by serial number or WWN, that are not JBOD, or that the controller does not report as crypto-erase capable are reported `FAIL`, as are such drives behind other controller types.
+
 ## Library
 
 ```go
