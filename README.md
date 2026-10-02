@@ -155,7 +155,7 @@ Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the cont
 Some controllers forward ATA commands to a non-RAID SATA drive but not the drive's registers, so the outcome of a sanitize cannot be read back. On a PERC H355 the answer is fixed-format sense with every register field zero, and hdparm reports `bad/missing sense data`. Behind a PERC/MegaRAID controller (`megaraid_sas`), such a drive is erased by the controller instead, if the controller reports it "Cryptographic Erase Capable" (ISE or SED drives):
 
 1. Write the markers through the OS.
-2. Remove the disk from the kernel (`/sys/block/sdX/device/delete`). The controller hides the drive in the next step, and reads of the stale disk would fail with I/O errors in the kernel log.
+2. Remove the disk from the kernel (`/sys/block/sdX/device/delete`). The controller hides the drive in the next step, and reads of the stale disk would fail with I/O errors in the kernel log. The markers' write handle is closed only after the removal: closing it makes udev re-read the partition table, and that read would race with the removal.
 3. `set good force`: the drive becomes unconfigured good, which the controller requires for an erase.
 4. `start erase crypto`.
 5. Wait for the result in the controller event log (`show events`): `Erase completed on PD 26(e0x44/s0)` or `Erase failed ...`. `show erase` cannot tell: it reads `Not in progress` both before and after an erase that takes no time.
