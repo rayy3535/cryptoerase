@@ -53,13 +53,13 @@ NIST SP 800-88r2 §4.5.1 asks for completion status, errors and device health, a
   - Commands used: Identify, Get Log Page (SMART, Sanitize Status), Sanitize, Format NVM, and Security Receive for TCG Level 0 Discovery.
   - TCG Level 0 Discovery records whether the drive reports media encryption and whether a locking range is locked.
 - **SATA:** through [hdparm](https://sourceforge.net/projects/hdparm/) (9.56 or later), behind the `ata.Backend` interface. hdparm handles SCSI/ATA Translation and sense-data formats across kernels and HBAs. A native SG_IO backend can be added behind the same interface.
-- **Dell PERC / Broadcom MegaRAID:** the OS sees only virtual disks. If `perccli64`, `perccli`, `storcli64` or `storcli` is installed, the record for each virtual disk lists the physical drives behind it, including whether each is a SED.
+- **Dell PERC / Broadcom MegaRAID:** the OS sees only virtual disks. If `perccli64`, `perccli`, `storcli64` or `storcli` is installed, the record for each virtual disk lists the physical drives behind it, including whether each is a SED. With `--raid-reset` the tool removes the RAID configuration and erases each drive directly; see [RAID controllers](#raid-controllers).
 
 ## Requirements
 
 - Linux, amd64 or arm64, running as root (admin passthrough needs `CAP_SYS_ADMIN`).
 - `hdparm` 9.56 or later if SATA drives are present.
-- Optional: `perccli64` or `storcli64` for RAID controller inventory.
+- Optional: `perccli64` or `storcli64` for RAID controller inventory; required for `--raid-reset`.
 
 The binary is static (`CGO_ENABLED=0`) and has no other runtime dependencies. It is meant to run from a minimal maintenance OS, for example a PXE-booted environment used between deployments.
 
@@ -100,6 +100,7 @@ cryptoerase --yes --job-id RECLAIM-1234 --report /var/tmp/erase.json
 | `--report FILE` | Report path. Default `./cryptoerase-<serial>-<UTC>.json` |
 | `--job-id ID` | Copied into the report |
 | `--allow-format` | Accept NVMe Format NVM SES=010b on controllers without Sanitize Crypto Erase (typically NVMe 1.2 drives). Off by default, because Format covers less than Sanitize; see [docs/background.md](docs/background.md) |
+| `--raid-reset` | PERC/MegaRAID: delete the virtual disks the running OS does not use, set their drives to non-RAID, then erase each drive directly. With `--inventory`, only the plan is reported. See [RAID controllers](#raid-controllers) |
 | `--exclude DEV` | Never touch `DEV` (`sda`, `/dev/sda`, `nvme0`). Repeatable. Reported `UNHANDLED` |
 | `--fw-policy FILE` | Replace the built-in firmware floor table |
 | `--parallel N` | Process at most N drives at once. Default 0 = all |
@@ -128,6 +129,26 @@ case $? in
 esac
 upload "/tmp/erase-$JOB.json"
 ```
+
+## RAID controllers
+
+On a Dell PERC or Broadcom MegaRAID controller in RAID mode, the OS sees virtual disks, not drives, so nothing behind them can be crypto-erased directly. `--raid-reset` removes that layer first:
+
+1. **Read the configuration** with `perccli64` (or `perccli`, `storcli64`, `storcli`): virtual disks, the drives behind them, hot spares, serial numbers and WWNs.
+2. **Decide, without changing anything.** A virtual disk that backs a disk the running OS uses (mounted, swap, through LVM) is kept, with its drives. The whole controller is left unchanged if:
+   - it carries a foreign configuration;
+   - any drive is in a state other than online, unconfigured good, JBOD or hot spare (failed, rebuilding, ...);
+   - the OS uses a disk on such a controller, and a virtual disk cannot be matched to its block device (by the CLI's "OS Drive Name" or the SCSI NAA identifier).
+3. **Apply,** in erase mode only:
+   - remove hot spares (`delete hotsparedrive`);
+   - delete the other virtual disks (`/cN/vM delete force`);
+   - set their drives to non-RAID (`set jbod`).
+4. **Wait** up to 60 s for each drive to appear as a block device, matched by WWN or serial number.
+5. **Erase** each drive like any directly attached drive: markers, Sanitize Crypto Erase / SANITIZE CRYPTO SCRAMBLE, verification. Each drive record names its controller slot (`attach.raid_slot`).
+
+Every command run (or, with `--inventory`, planned) is in the report under `raid_reset`. A drive that was to be exposed but never reached the OS is reported `FAIL`, so its data cannot be left behind unnoticed. Drives stay non-RAID afterwards.
+
+Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the controller and firmware; if IDENTIFY does not get through, the drive is reported `UNHANDLED` as usual.
 
 ## Library
 
@@ -184,7 +205,7 @@ Rule format, one per line: `model regex ; firmware regex ; minimum ; reference`.
 
 - **SAS drives:** SCSI SANITIZE is not implemented.
 - **HDDs:** cryptographic erase is not applicable to drives that do not encrypt; use overwrite.
-- **Drives behind RAID virtual disks:** use the controller's own cryptographic erase for SED/ISE drives, or switch the drives to non-RAID / HBA mode and rerun.
+- **Drives behind RAID virtual disks without `--raid-reset`:** they are listed, not erased. Use `--raid-reset`, the controller's own cryptographic erase for SED/ISE drives, or switch the drives to non-RAID / HBA mode and rerun. RAID controllers other than PERC/MegaRAID are not supported.
 - **TCG Opal drives with a locked range, or ATA drives with a user password set:** these need a PSID revert or unlock first. They are reported `FAIL`.
 - **NVMe controllers with no namespace attached:** recreate the namespace layout first.
 - **Windows and macOS:** not supported.
@@ -204,7 +225,7 @@ make examples     # regenerate examples/*.json after an intended report change
 
 The tests come in four layers:
 
-- **Scenario tests** build a fake sysfs tree, use sparse files as drives, and swap in fake NVMe, ATA and RAID backends to run whole servers through `Run`. They cover: honest erase; firmware that reports success but keeps the data; failed, stalled, rejected and interrupted sanitize; unreadable device status; format-only NVMe 1.2 controllers; the firmware floor; unallocated NVM capacity; RAID virtual disks; HDD, USB, removable, virtual and in-use disks (including through LVM, swap and a root filesystem shown as `/dev/root`); native NVMe multipath naming; TCG locking; marker write, read-back and verification faults; cancellation; the `--parallel` bound.
+- **Scenario tests** build a fake sysfs tree, use sparse files as drives, and swap in fake NVMe, ATA and RAID backends to run whole servers through `Run`. They cover: honest erase; firmware that reports success but keeps the data; failed, stalled, rejected and interrupted sanitize; unreadable device status; format-only NVMe 1.2 controllers; the firmware floor; unallocated NVM capacity; RAID virtual disks, and the RAID reset (planning, in-use virtual disks, foreign and failed drives, hot spares, failed commands, drives that never appear); HDD, USB, removable, virtual and in-use disks (including through LVM, swap and a root filesystem shown as `/dev/root`); native NVMe multipath naming; TCG locking; marker write, read-back and verification faults; cancellation; the `--parallel` bound.
 - **Unit tests** per package, including the exact bytes of every NVMe admin command handed to the kernel (through an injectable ioctl), and the polling loops on a fake clock (`testing/synctest`) with the production timeouts.
 - **Fuzz tests** for every parser of device or tool output (NVMe Identify and log pages, ATA IDENTIFY and hdparm output, TCG Level 0 Discovery, perccli/storcli JSON, firmware policy and version ordering).
 - **Integration tests** (`-tags integration`) against the running kernel: O_DIRECT and block ioctls on a loop device, markers, an inventory of the host, and Identify on any NVMe controller present. They never write to a real drive.

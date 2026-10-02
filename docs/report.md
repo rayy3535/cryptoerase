@@ -15,6 +15,7 @@
 | `started_at`, `finished_at` | UTC |
 | `result` | `PASS`, `FAIL` or `INCOMPLETE`. These map to exit codes 0, 1 and 2 |
 | `counts` | Number of drives per result |
+| `raid_reset` | With `--raid-reset`: per controller, the virtual disks deleted and kept, the drives exposed, the commands run (or planned), `executed`, and `skipped` or `error` |
 | `drives` | One record per drive. See below |
 
 ## Drive record
@@ -31,6 +32,7 @@
 | `tcg` | TCG Level 0 Discovery: SSCs, locking state, `media_encryption` |
 | `health` | NVMe SMART: critical warning, available spare, percentage used |
 | `perc` | Physical drives behind a RAID virtual disk, if a controller CLI is installed |
+| `attach.raid_slot` | Controller slot (`/c0/e64/s1`) of a drive exposed by `--raid-reset` |
 | `firmware_policy` | `pass`, `fail` or `no_rule`, with the matching rule |
 | `nist_method`, `technique`, `technique_detail`, `scope`, `command` | How the drive was erased |
 | `planned` | Inventory mode only: the method that would be used |

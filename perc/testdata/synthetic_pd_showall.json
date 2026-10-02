@@ -1,0 +1,44 @@
+{
+"Controllers":[
+{
+	"Command Status" : {
+		"CLI Version" : "007.0000.0000.0000 synthetic",
+		"Operating system" : "Linux",
+		"Controller" : 0,
+		"Status" : "Success",
+		"Description" : "Show Drive Information Succeeded."
+	},
+	"Response Data" : {
+		"Drive /c0/e64/s0" : [
+			{"EID:Slt":"64:0","DID":0,"State":"Onln","DG":0,"Size":"893.750 GB","Intf":"SATA","Med":"SSD","SED":"N","PI":"N","SeSz":"512B","Model":"SAMSUNG MZ7LH960HAJR-00005          ","Sp":"U","Type":"-"}
+		],
+		"Drive /c0/e64/s0 - Detailed Information" : {
+			"Drive /c0/e64/s0 State" : {"Shield Counter" : 0, "Media Error Count" : 0},
+			"Drive /c0/e64/s0 Device attributes" : {
+				"SN" : "EXAMPLESATA0001     ",
+				"Manufacturer Id" : "ATA     ",
+				"Model Number" : "SAMSUNG MZ7LH960HAJR-00005",
+				"Firmware Revision" : "HXT7904Q",
+				"WWN" : "5002538E00000001"
+			},
+			"Drive /c0/e64/s0 Policies/Settings" : {"Drive position" : "DriveGroup:0, Span:0, Row:0"}
+		},
+		"Drive /c0/e64/s1" : [
+			{"EID:Slt":"64:1","DID":1,"State":"Onln","DG":0,"Size":"893.750 GB","Intf":"SATA","Med":"SSD","SED":"N","PI":"N","SeSz":"512B","Model":"SAMSUNG MZ7LH960HAJR-00005          ","Sp":"U","Type":"-"}
+		],
+		"Drive /c0/e64/s1 - Detailed Information" : {
+			"Drive /c0/e64/s1 Device attributes" : {
+				"SN" : "EXAMPLESATA0002",
+				"WWN" : "5002538E00000002"
+			}
+		},
+		"Drive /c0/e64/s2" : [
+			{"EID:Slt":"64:2","DID":2,"State":"DHS","DG":"-","Size":"893.750 GB","Intf":"SATA","Med":"SSD","SED":"N","PI":"N","SeSz":"512B","Model":"SAMSUNG MZ7LH960HAJR-00005","Sp":"U","Type":"-"}
+		],
+		"Drive /c0/e64/s2 - Detailed Information" : {
+			"Drive /c0/e64/s2 Device attributes" : {"SN" : "EXAMPLESATA0003", "WWN" : "5002538E00000003"}
+		}
+	}
+}
+]
+}

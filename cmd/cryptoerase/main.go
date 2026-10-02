@@ -83,6 +83,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		report      = fs.String("report", "", "JSON report path (default ./cryptoerase-<serial>-<UTC>.json)")
 		jobID       = fs.String("job-id", "", "job / ticket ID, copied into the report")
 		allowFormat = fs.Bool("allow-format", false, "NVMe: accept Format NVM SES=010b when Sanitize Crypto Erase is not supported")
+		raidReset   = fs.Bool("raid-reset", false, "PERC/MegaRAID: delete virtual disks the running OS does not use and set their drives to non-RAID, then erase each drive (needs perccli64 or storcli64)")
 		fwPolicy    = fs.String("fw-policy", "", "file replacing the built-in firmware floor table")
 		samples     = fs.Int("samples", 16, "markers per namespace / disk (>= 2)")
 		parallel    = fs.Int("parallel", 0, "drives processed at once (0 = all)")
@@ -134,6 +135,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Mode:              cryptoerase.ModeErase,
 		Confirm:           *yes,
 		AllowFormat:       *allowFormat,
+		RAIDReset:         *raidReset,
 		Samples:           *samples,
 		Parallel:          *parallel,
 		Exclude:           exclude,

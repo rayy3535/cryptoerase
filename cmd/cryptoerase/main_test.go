@@ -107,7 +107,7 @@ func TestFlagsMapToOptions(t *testing.T) {
 	got := fakeRun(t, report("PASS"), nil)
 	var out, errb bytes.Buffer
 	code := run([]string{
-		"--yes", "--allow-format", "--job-id", "JOB-1", "--samples", "4", "--parallel", "2",
+		"--yes", "--allow-format", "--raid-reset", "--job-id", "JOB-1", "--samples", "4", "--parallel", "2",
 		"--poll-interval", "3s", "--no-progress-timeout", "7m", "--format-timeout", "9m",
 		"--hdparm", "/opt/hdparm", "--exclude", "sda", "--exclude", "/dev/nvme1",
 		"--fw-policy", pol, "--report", "r.json",
@@ -115,7 +115,7 @@ func TestFlagsMapToOptions(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d stderr %s", code, errb.String())
 	}
-	if got.Mode != cryptoerase.ModeErase || !got.Confirm || !got.AllowFormat || got.JobID != "JOB-1" ||
+	if got.Mode != cryptoerase.ModeErase || !got.Confirm || !got.AllowFormat || !got.RAIDReset || got.JobID != "JOB-1" ||
 		got.Samples != 4 || got.Parallel != 2 || got.PollInterval != 3*time.Second ||
 		got.NoProgressTimeout != 7*time.Minute || got.FormatTimeout != 9*time.Minute {
 		t.Errorf("options %+v", got)

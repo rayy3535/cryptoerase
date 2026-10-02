@@ -1,0 +1,30 @@
+{
+"Controllers":[
+{
+	"Command Status" : {
+		"CLI Version" : "007.0000.0000.0000 synthetic",
+		"Controller" : 0,
+		"Status" : "Success",
+		"Description" : "None"
+	},
+	"Response Data" : {
+		"/c0/v0" : [
+			{"DG/VD":"0/0","TYPE":"RAID1","State":"Optl","Access":"RW","Consist":"Yes","Cache":"NRWTD","Cac":"-","sCC":"ON","Size":"893.750 GB","Name":"data"}
+		],
+		"PDs for VD 0" : [
+			{"EID:Slt":"64:0","DID":0,"State":"Onln","DG":0,"Size":"893.750 GB","Intf":"SATA","Med":"SSD","SED":"N","PI":"N","SeSz":"512B","Model":"SAMSUNG MZ7LH960HAJR-00005","Sp":"U","Type":"-"},
+			{"EID:Slt":"64:1","DID":1,"State":"Onln","DG":0,"Size":"893.750 GB","Intf":"SATA","Med":"SSD","SED":"N","PI":"N","SeSz":"512B","Model":"SAMSUNG MZ7LH960HAJR-00005","Sp":"U","Type":"-"}
+		],
+		"VD0 Properties" : {
+			"Strip Size" : "64 KB",
+			"Number of Blocks" : 1874329600,
+			"Span Depth" : 1,
+			"Number of Drives Per Span" : 2,
+			"OS Drive Name" : "/dev/sda",
+			"Creation Date" : "01-01-2026",
+			"SCSI NAA Id" : "6F4EE0804F0FEB002E000000000000AB"
+		}
+	}
+}
+]
+}

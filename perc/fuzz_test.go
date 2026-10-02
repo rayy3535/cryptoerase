@@ -14,7 +14,18 @@ func FuzzParse(f *testing.F) {
 	}
 	f.Add([]byte(`{"Controllers":[{"Command Status":{"Controller":0},"Response Data":{"x":[{"EID:Slt":"64:0"}],"y":[{"EID:Slt":"64:0"}]}}]}`))
 	f.Add([]byte(`{`))
+	if b, err := os.ReadFile("testdata/synthetic_vall_showall.json"); err == nil {
+		f.Add(b)
+	}
 	f.Fuzz(func(t *testing.T, b []byte) {
+		if vds, err := ParseVirtualDisks(b); err == nil {
+			for _, v := range vds {
+				if v.VD < 0 && v.Controller < 0 {
+					t.Fatal("negative identifiers")
+				}
+			}
+		}
+		_, _ = ParseConfig(b, b, "storcli64")
 		d, err := Parse(b, "storcli64")
 		if err != nil {
 			return

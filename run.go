@@ -26,6 +26,9 @@ type runner struct {
 	percOnce   sync.Once
 	percDrives []perc.Drive
 	percErr    error
+
+	raidNotes   map[string]raidNote
+	raidExposed []exposedDrive
 }
 
 // Run detects every drive, then inventories or erases them concurrently and
@@ -44,6 +47,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 		StartedAt: time.Now().UTC(),
 		Policy: PolicySummary{
 			AllowFormat: opts.AllowFormat,
+			RAIDReset:   opts.RAIDReset,
 			Samples:     opts.Samples,
 			Exclude:     opts.Exclude,
 		},
@@ -51,11 +55,16 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	for _, fr := range opts.FirmwarePolicy {
 		rep.Policy.FirmwareRules = append(rep.Policy.FirmwareRules, fr.String())
 	}
+	// In-use disks are known before any RAID change, so a virtual disk that
+	// backs the running OS is never deleted.
+	r.inUse = r.computeInUse()
+	if opts.RAIDReset {
+		rep.RAIDReset = r.raidReset(ctx)
+	}
 	inv, err := r.discover()
 	if err != nil {
 		return nil, fmt.Errorf("discover drives: %w", err)
 	}
-	r.inUse = r.computeInUse()
 	r.log.Info("discovered", "mode", opts.Mode.String(), "nvme_controllers", len(inv.nvme),
 		"scsi_disks", len(inv.scsi), "other", len(inv.other), "in_use", strings.Join(keys(r.inUse), ","))
 
@@ -98,6 +107,9 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	wg.Wait()
 
 	rep.Drives = results
+	if len(r.raidExposed) > 0 {
+		r.reconcileRAID(rep)
+	}
 	rep.Host = r.host()
 	rep.Tool = Tool{
 		Name:          "cryptoerase",
