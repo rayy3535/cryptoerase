@@ -32,7 +32,7 @@
 | `tcg` | TCG Level 0 Discovery: SSCs, locking state, `media_encryption` |
 | `health` | NVMe SMART: critical warning, available spare, percentage used |
 | `perc` | Physical drives behind a RAID virtual disk, if a controller CLI is installed |
-| `attach.raid_slot` | Controller slot (`/c0/e64/s1`) of a drive exposed by `--raid-reset` |
+| `attach.raid_slot` | Controller slot (`/c0/e64/s1`) of a drive exposed by `--raid-reset` or erased by the controller |
 | `firmware_policy` | `pass`, `fail` or `no_rule`, with the matching rule |
 | `nist_method`, `technique`, `technique_detail`, `scope`, `command` | How the drive was erased |
 | `planned` | Inventory mode only: the method that would be used |
@@ -46,7 +46,7 @@
 
 - **NVMe Sanitize:** the Sanitize Status log fields `sstat`, `sprog`, `global_data_erased`, and `estimated_crypto_erase_s`.
 - **NVMe Format:** `format`, one entry per namespace with the NSID, LBA format and CDW10 issued.
-- **SATA:** `ata_sanitize_status`.
+- **SATA:** `ata_sanitize_status`; or, for a drive erased by its PERC/MegaRAID controller, `perc_erase`: `controller`, `slot`, `did`, `tool`, the `commands` run (planned in inventory mode), the `outcome` (`completed`, `failed` or `aborted`) and the controller log `event` it was read from, and `reattached_as` when the disk came back under another name.
 - **All NVMe:** `rescan_error`, set if the namespace rescan after the erase failed.
 
 ## Mapping to NIST SP 800-88r2 §4.6

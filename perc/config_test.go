@@ -36,8 +36,12 @@ func TestParseConfig(t *testing.T) {
 		t.Fatalf("drives %+v", c.Drives)
 	}
 	d0 := c.Drives[0]
-	if d0.Slot != "64:0" || d0.Serial != "EXAMPLESATA0001" || d0.WWN != "5002538E00000001" || d0.State != "Onln" || d0.DriveGroup() != 0 {
+	if d0.Slot != "64:0" || d0.Serial != "EXAMPLESATA0001" || d0.WWN != "5002538E00000001" || d0.State != "Onln" || d0.DriveGroup() != 0 ||
+		!d0.CryptoErase || d0.Sanitize != "CryptoErase, BlockErase" {
 		t.Errorf("drive 0 %+v", d0)
+	}
+	if d1 := c.Drives[1]; d1.Serial != "EXAMPLESATA0002" || d1.CryptoErase || d1.Sanitize != "" {
+		t.Errorf("drive 1 %+v", d1)
 	}
 	if hs := c.Drives[2]; hs.State != "DHS" || hs.DriveGroup() != -1 || hs.Foreign() {
 		t.Errorf("hot spare %+v", hs)

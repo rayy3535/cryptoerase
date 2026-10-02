@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.1.0-rc.3 (2026-10-02)
 
 - `--raid-reset` (`Options.RAIDReset`): on Dell PERC / Broadcom MegaRAID controllers, delete the virtual disks the running OS does not use, remove hot spares, set the drives to non-RAID, wait for them to appear, and erase each drive directly. Controllers with foreign configurations, failed or rebuilding drives, or a virtual disk that cannot be matched to its block device while the OS uses the controller are left unchanged. Exposed drives that never reach the OS are reported `FAIL`. With `--inventory`, only the plan is reported.
 - `perc.Lister` reads the full controller configuration (`Controllers`) and can delete virtual disks, remove hot spares and set drives to JBOD. Drives carry serial numbers and WWNs.
 - Drive records include the SCSI `wwid` under `attach`.
-- SATA: when the controller in front of the drive passes ATA commands through but returns no ATA registers (hdparm: `bad/missing sense data`; seen on Dell PERC with the drive in non-RAID mode), the drive is reported `FAIL` with that reason before markers are written or SANITIZE is sent. Before, SANITIZE was sent and the drive failed afterwards with "sanitize did not report 'Completed Without Error'", leaving it unknown whether the drive had been erased. SANITIZE STATUS EXT (read-only) now also runs in `--inventory`, so this and a frozen sanitize show up there.
+- SATA: SANITIZE STATUS EXT (read-only) runs first, in `--inventory` too, so a frozen sanitize and the case below show up before anything is written. When the controller in front of the drive passes ATA commands through but returns no ATA registers (hdparm: `bad/missing sense data`; seen on Dell PERC with the drive in non-RAID mode), SANITIZE is no longer sent through hdparm. Before, it was sent and the drive failed with "sanitize did not report 'Completed Without Error'", and whether the drive had been erased was unknown. Behind controllers other than PERC/MegaRAID such a drive is reported `FAIL`.
 - `ata.ErrNoRegisters`; the hdparm backend returns it from `SanitizeStatus` and `SanitizeCryptoScramble`.
+- Such SATA drives behind a PERC/MegaRAID controller are crypto-erased by the controller: the disk is removed from the kernel, set unconfigured good, `start erase crypto` is run, the result is read from the controller event log, the drive is set back to JBOD, and the markers are verified once the disk is back. The controller commands and the event log format were checked by hand on a PERC H355 (perccli 007.1623) with SATA SSDs in non-RAID mode. Report: `device_status.perc_erase`; inventory method `perc-crypto-erase`.
+- `perc.Lister`: `SetGood`, `StartCryptoErase`, `EraseStatus`, `Events`, `ParseEvents`, `EraseOutcome`; drives carry `crypto_erase_capable` and `sanitize_support`.
 
 ## v0.1.0-rc.2 (2026-10-01)
 

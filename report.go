@@ -143,7 +143,7 @@ type Attach struct {
 	SCSIModel  string `json:"scsi_model,omitempty"`
 	WWID       string `json:"wwid,omitempty"`
 	// RAIDSlot is the controller slot ("/c0/e64/s1") of a drive that the
-	// RAID reset exposed.
+	// RAID reset exposed, or that the controller erased.
 	RAIDSlot string `json:"raid_slot,omitempty"`
 }
 
@@ -200,6 +200,26 @@ type DeviceStatus struct {
 	Format                   []FormatResult      `json:"format,omitempty"`
 	ATASanitize              *ata.SanitizeStatus `json:"ata_sanitize_status,omitempty"`
 	RescanError              string              `json:"rescan_error,omitempty"`
+	// PERCErase is set when the RAID controller erased the drive.
+	PERCErase *PERCErase `json:"perc_erase,omitempty"`
+}
+
+// PERCErase records a cryptographic erase done by a PERC/MegaRAID
+// controller on one of its drives.
+type PERCErase struct {
+	Controller int    `json:"controller"`
+	Slot       string `json:"slot"` // "/c0/e68/s0"
+	DID        int    `json:"did"`
+	Tool       string `json:"tool"`
+	// Commands were run in erase mode, or would be run in inventory mode.
+	Commands []string `json:"commands"`
+	// Outcome is "completed", "failed" or "aborted", from the controller's
+	// event log; Event is the entry it came from.
+	Outcome string      `json:"outcome,omitempty"`
+	Event   *perc.Event `json:"event,omitempty"`
+	// ReattachedAs is the block device the drive came back as, when its
+	// name changed.
+	ReattachedAs string `json:"reattached_as,omitempty"`
 }
 
 // FormatResult records one Format NVM command.

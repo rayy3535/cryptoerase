@@ -156,7 +156,7 @@ func ParseConfig(pdOut, vdOut []byte, tool string) ([]Controller, error) {
 			return nil, fmt.Errorf("%s: drive %s has no controller number", tool, d.Slot)
 		}
 		if det, ok := details[Path(*d.Controller, d.Slot)]; ok {
-			d.Serial, d.WWN = det.serial, det.wwn
+			d.Serial, d.WWN, d.CryptoErase, d.Sanitize = det.serial, det.wwn, det.cryptoErase, det.sanitize
 		}
 		c := get(*d.Controller)
 		c.Drives = append(c.Drives, d)
@@ -173,12 +173,17 @@ func ParseConfig(pdOut, vdOut []byte, tool string) ([]Controller, error) {
 	return out, nil
 }
 
-type driveDetail struct{ serial, wwn string }
+type driveDetail struct {
+	serial, wwn, sanitize string
+	cryptoErase           bool
+}
 
-var reDeviceAttrs = regexp.MustCompile(`^Drive (/c\d+(?:/e\d+)?/s\d+) Device attributes$`)
+var reDriveDetail = regexp.MustCompile(`^Drive (/c\d+(?:/e\d+)?/s\d+) (Device attributes|Policies/Settings)$`)
 
-// parseDetails extracts "SN" and "WWN" from the "Drive /cX/eY/sZ Device
-// attributes" objects of "show all J" output, keyed by drive path.
+// parseDetails extracts "SN" and "WWN" (from "Drive /cX/eY/sZ Device
+// attributes") and "Cryptographic Erase Capable" and "Sanitize Support"
+// (from "Drive /cX/eY/sZ Policies/Settings") out of "show all J" output,
+// keyed by drive path. The objects are found at any depth.
 func parseDetails(out []byte) (map[string]driveDetail, error) {
 	var doc jsonDoc
 	if err := json.Unmarshal(out, &doc); err != nil {
@@ -193,15 +198,24 @@ func parseDetails(out []byte) (map[string]driveDetail, error) {
 				return
 			}
 			for k, sub := range m {
-				if g := reDeviceAttrs.FindStringSubmatch(k); g != nil {
-					if attrs, ok := sub.(map[string]any); ok {
-						sn, _ := str(attrs["SN"])
-						wwn, _ := str(attrs["WWN"])
-						res[g[1]] = driveDetail{serial: strings.TrimSpace(sn), wwn: strings.TrimSpace(wwn)}
-					}
+				g := reDriveDetail.FindStringSubmatch(k)
+				attrs, ok := sub.(map[string]any)
+				if g == nil || !ok {
+					walkDet(sub)
 					continue
 				}
-				walkDet(sub)
+				det := res[g[1]]
+				if g[2] == "Device attributes" {
+					sn, _ := str(attrs["SN"])
+					wwn, _ := str(attrs["WWN"])
+					det.serial, det.wwn = strings.TrimSpace(sn), strings.TrimSpace(wwn)
+				} else {
+					ce, _ := str(attrs["Cryptographic Erase Capable"])
+					det.cryptoErase = strings.EqualFold(strings.TrimSpace(ce), "Yes")
+					san, _ := str(attrs["Sanitize Support"])
+					det.sanitize = strings.TrimSpace(san)
+				}
+				res[g[1]] = det
 			}
 		}
 		walkDet(c.ResponseData)
@@ -333,9 +347,16 @@ func (e *CommandError) Error() string {
 
 // do runs one configuration command (JSON output) and checks its status.
 func (l *Lister) do(ctx context.Context, args ...string) (string, error) {
+	cmd, _, err := l.doJSON(ctx, args...)
+	return cmd, err
+}
+
+// doJSON runs one command with JSON output, checks every controller's
+// status and returns the decoded document.
+func (l *Lister) doJSON(ctx context.Context, args ...string) (string, *jsonDoc, error) {
 	path, name := l.tool()
 	if path == "" {
-		return "", errors.New("no PERC/MegaRAID CLI installed")
+		return "", nil, errors.New("no PERC/MegaRAID CLI installed")
 	}
 	cmd := name + " " + strings.Join(args, " ")
 	out, err := l.exec(ctx, path, append(args, "J")...)
@@ -344,7 +365,7 @@ func (l *Lister) do(ctx context.Context, args ...string) (string, error) {
 		if err == nil {
 			err = fmt.Errorf("unreadable output: %q", strings.TrimSpace(string(out)))
 		}
-		return cmd, &CommandError{Command: cmd, Status: "error", Detail: err.Error()}
+		return cmd, nil, &CommandError{Command: cmd, Status: "error", Detail: err.Error()}
 	}
 	for _, c := range doc.Controllers {
 		if !strings.EqualFold(c.CommandStatus.Status, "Success") {
@@ -353,10 +374,10 @@ func (l *Lister) do(ctx context.Context, args ...string) (string, error) {
 				b, _ := json.Marshal(c.CommandStatus.Detailed)
 				detail += " " + string(b)
 			}
-			return cmd, &CommandError{Command: cmd, Status: c.CommandStatus.Status, Detail: strings.TrimSpace(detail)}
+			return cmd, nil, &CommandError{Command: cmd, Status: c.CommandStatus.Status, Detail: strings.TrimSpace(detail)}
 		}
 	}
-	return cmd, nil
+	return cmd, &doc, nil
 }
 
 // DeleteVD deletes virtual disk vd on controller c ("/cC/vVD delete force").

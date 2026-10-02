@@ -29,6 +29,13 @@ type runner struct {
 
 	raidNotes   map[string]raidNote
 	raidExposed []exposedDrive
+
+	// Controller configuration for erases done by the controller, read
+	// once; percMu serializes the controller commands of those erases.
+	ctrlOnce sync.Once
+	ctrls    []perc.Controller
+	ctrlErr  error
+	percMu   sync.Mutex
 }
 
 // Run detects every drive, then inventories or erases them concurrently and

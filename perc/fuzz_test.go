@@ -44,3 +44,23 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+func FuzzParseEvents(f *testing.F) {
+	if b, err := os.ReadFile("testdata/events_latest.txt"); err == nil {
+		f.Add(string(b))
+	}
+	f.Add("seqNum: 0x1\nEvent Description: Erase completed on PD 26(e0x44/s0)\nDevice ID: 38\n")
+	f.Fuzz(func(t *testing.T, s string) {
+		evs, err := ParseEvents(s)
+		if err != nil {
+			return
+		}
+		if len(evs) == 0 {
+			t.Fatal("no events without error")
+		}
+		o, ev := EraseOutcome(evs, 0, 38)
+		if (o == "") != (ev == nil) {
+			t.Fatalf("outcome %q with event %+v", o, ev)
+		}
+	})
+}

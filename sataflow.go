@@ -120,6 +120,9 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 	st, err := r.opts.ATA.SanitizeStatus(ctx, dev)
 	if err != nil {
 		if errors.Is(err, ata.ErrNoRegisters) {
+			if driver == "megaraid_sas" {
+				return r.percSATA(ctx, rec, name, driver, sec, err)
+			}
 			return r.done(rec, Fail, fmt.Sprintf("the %s controller passes ATA commands through but does not return the drive's status, so a sanitize cannot be confirmed; not erased. Use the controller's own erase, or connect the drive to an HBA/AHCI port (%v)", driver, err))
 		}
 		return r.done(rec, Fail, fmt.Sprintf("sanitize status unreadable: %v", err))

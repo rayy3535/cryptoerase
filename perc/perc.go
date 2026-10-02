@@ -33,7 +33,13 @@ type Drive struct {
 	Model      string `json:"model,omitempty"`
 	Serial     string `json:"serial,omitempty"`
 	WWN        string `json:"wwn,omitempty"`
-	Tool       string `json:"tool"`
+	// CryptoErase is the controller's "Cryptographic Erase Capable": the
+	// controller can crypto-erase the drive itself (ISE or SED drives).
+	CryptoErase bool `json:"crypto_erase_capable,omitempty"`
+	// Sanitize is the controller's "Sanitize Support" list, e.g.
+	// "CryptoErase, BlockErase".
+	Sanitize string `json:"sanitize_support,omitempty"`
+	Tool     string `json:"tool"`
 }
 
 // Lister runs a controller CLI. LookPath and Exec are overridable for tests.

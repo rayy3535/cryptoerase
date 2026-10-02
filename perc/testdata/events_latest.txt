@@ -1,0 +1,87 @@
+
+
+seqNum: 0x00000bc6
+Time: Fri Oct  2 05:41:23 2026
+
+Code: 0x00000060
+Class: 0
+Locale: 0x02
+Event Description: Erase started on PD 26(e0x44/s0)
+Event Data:
+===========
+Device ID: 38
+Enclosure Index: 68
+Slot Number: 0
+
+
+seqNum: 0x00000bc7
+Time: Fri Oct  2 05:41:23 2026
+
+Code: 0x00000061
+Class: 0
+Locale: 0x02
+Event Description: Erase progress on PD 26(e0x44/s0) is 100.00%(0s)
+Event Data:
+===========
+Device ID: 38
+Enclosure Index: 68
+Slot Number: 0
+
+
+seqNum: 0x00000bc8
+Time: Fri Oct  2 05:41:23 2026
+
+Code: 0x00000062
+Class: 0
+Locale: 0x02
+Event Description: Erase completed on PD 26(e0x44/s0)
+Event Data:
+===========
+Device ID: 38
+Enclosure Index: 68
+Slot Number: 0
+
+
+seqNum: 0x00000bcb
+Time: Fri Oct  2 05:47:35 2026
+
+Code: 0x00000072
+Class: 0
+Locale: 0x02
+Event Description: State change on PD 26(e0x44/s0) from UNCONFIGURED_GOOD(0) to JBOD(40)
+Event Data:
+===========
+Device ID: 38
+Enclosure Index: 68
+Slot Number: 0
+Previous state: 0
+New state: 64
+
+
+seqNum: 0x00000bcc
+Time: Fri Oct  2 05:47:35 2026
+
+Code: 0x00000152
+Class: 0
+Locale: 0x20
+Event Description: Controller requests a host bus rescan
+Event Data:
+===========
+None
+CLI Version = 007.1623.0000.0000 May 17, 2021
+Operating system = Linux 5.15.0-39-generic
+Controller = 0
+Status = Success
+Description = None
+
+Latest Event: = 5
+
+Controller Properties :
+=====================
+
+------------------------------------
+Ctrl Status  Method    Value
+------------------------------------
+   0 Success GetLatest Latest Event
+------------------------------------
+
