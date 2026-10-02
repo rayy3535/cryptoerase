@@ -194,7 +194,7 @@ func EraseOutcome(evs []Event, seq uint32, did int) (string, *Event) {
 			if *e.DeviceID != did {
 				continue
 			}
-		} else if pd, err := strconv.ParseUint(g[2], 16, 32); err != nil || int(pd) != did {
+		} else if pd, err := strconv.ParseInt(g[2], 16, 32); err != nil || int(pd) != did {
 			continue
 		}
 		if best == nil || e.Seq > best.Seq {

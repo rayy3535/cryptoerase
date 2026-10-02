@@ -260,7 +260,7 @@ func (r *runner) waitPERCDrive(ctx context.Context, d perc.Drive, host string) s
 
 // detachSCSI removes a disk from the kernel (/sys/block/NAME/device/delete).
 func (r *runner) detachSCSI(name string) error {
-	return os.WriteFile(filepath.Join(r.opts.SysfsRoot, "block", name, "device", "delete"), []byte("1"), 0o200)
+	return os.WriteFile(filepath.Join(r.opts.SysfsRoot, "block", name, "device", "delete"), []byte("1"), 0o600)
 }
 
 // rescanSCSI asks a SCSI host to scan for disks.
@@ -268,7 +268,7 @@ func (r *runner) rescanSCSI(host string) {
 	if host == "" {
 		return
 	}
-	if err := os.WriteFile(filepath.Join(r.opts.SysfsRoot, "class", "scsi_host", host, "scan"), []byte("- - -"), 0o200); err != nil {
+	if err := os.WriteFile(filepath.Join(r.opts.SysfsRoot, "class", "scsi_host", host, "scan"), []byte("- - -"), 0o600); err != nil {
 		r.log.Warn("rescan SCSI host", "host", host, "error", err)
 	}
 }
