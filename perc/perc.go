@@ -56,6 +56,26 @@ type Lister struct {
 	Timeout  time.Duration
 }
 
+// Check reports whether a controller CLI is available: Path if set (it must
+// exist and be executable), else one of Tools in $PATH or InstallDirs.
+func (l *Lister) Check(context.Context) error {
+	if l.Path != "" {
+		look := l.LookPath
+		if look == nil {
+			look = exec.LookPath
+		}
+		if _, err := look(l.Path); err != nil {
+			return fmt.Errorf("RAID controller CLI not found (%s): %w", l.Path, err)
+		}
+		return nil
+	}
+	if path, _ := l.tool(); path == "" {
+		return fmt.Errorf("RAID controller CLI not found: none of %s in $PATH or %s (install perccli64, or set its path)",
+			strings.Join(Tools, ", "), strings.Join(InstallDirs, ", "))
+	}
+	return nil
+}
+
 // List returns the physical drives, or nil with no error when no CLI is
 // installed.
 func (l *Lister) List(ctx context.Context) ([]Drive, error) {

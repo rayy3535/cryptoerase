@@ -165,6 +165,22 @@ func (h *Hdparm) SanitizeCryptoScramble(ctx context.Context, dev string) error {
 	return nil
 }
 
+// Check reports whether hdparm can be run: the binary is found and
+// `hdparm -V` succeeds.
+func (h *Hdparm) Check(ctx context.Context) error {
+	path := h.Path
+	if path == "" {
+		path = "hdparm"
+	}
+	if _, err := exec.LookPath(path); err != nil {
+		return fmt.Errorf("hdparm not found (%s): %w", path, err)
+	}
+	if _, _, err := h.run(ctx, "-V"); err != nil {
+		return fmt.Errorf("hdparm does not run: %w", err)
+	}
+	return nil
+}
+
 // Version returns the first line of `hdparm -V`.
 func (h *Hdparm) Version(ctx context.Context) string {
 	out, _, err := h.run(ctx, "-V")

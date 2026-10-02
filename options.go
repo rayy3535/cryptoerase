@@ -122,6 +122,18 @@ type Options struct {
 // ErrNotConfirmed is returned when ModeErase is requested without Confirm.
 var ErrNotConfirmed = errors.New("cryptoerase: erase requested without confirmation")
 
+// ErrToolMissing is returned when the run needs a tool that is not
+// available: hdparm when SATA drives are present, the PERC/MegaRAID CLI when
+// a PERC/MegaRAID controller has disks or RAIDReset is set. Nothing has been
+// changed when it is returned.
+var ErrToolMissing = errors.New("cryptoerase: required tool not available")
+
+// Checker is implemented by backends that can tell up front whether they
+// work (ata.Hdparm, perc.Lister). Backends without it are assumed to.
+type Checker interface {
+	Check(ctx context.Context) error
+}
+
 func (o *Options) withDefaults() (Options, error) {
 	v := *o
 	if v.Mode == ModeErase && !v.Confirm {

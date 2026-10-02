@@ -171,9 +171,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	rep, err := runErase(ctx, opts)
 	if err != nil {
-		if errors.Is(err, cryptoerase.ErrNotConfirmed) {
+		switch {
+		case errors.Is(err, cryptoerase.ErrNotConfirmed):
 			logger.Error("refusing to erase without --yes (use --inventory to only detect)")
-		} else {
+		case errors.Is(err, cryptoerase.ErrToolMissing):
+			logger.Error("required tool missing; nothing was changed (see --hdparm, --raid-cli)", "error", err)
+		default:
 			logger.Error("run", "error", err)
 		}
 		return 1

@@ -129,3 +129,16 @@ func TestParseIstdoutSkipsMalformedRows(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestHdparmCheck(t *testing.T) {
+	ctx := context.Background()
+	if err := (&Hdparm{Path: "cryptoerase-test-no-such-hdparm"}).Check(ctx); err == nil || !strings.Contains(err.Error(), "hdparm not found (cryptoerase-test-no-such-hdparm)") {
+		t.Fatalf("missing: %v", err)
+	}
+	if err := fakeHdparm(t, "echo 'hdparm v9.65'\n").Check(ctx); err != nil {
+		t.Fatalf("working: %v", err)
+	}
+	if err := fakeHdparm(t, "exit 1\n").Check(ctx); err == nil || !strings.Contains(err.Error(), "does not run") {
+		t.Fatalf("broken: %v", err)
+	}
+}

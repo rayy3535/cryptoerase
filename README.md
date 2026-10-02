@@ -59,7 +59,9 @@ NIST SP 800-88r2 §4.5.1 asks for completion status, errors and device health, a
 
 - Linux, amd64 or arm64, running as root (admin passthrough needs `CAP_SYS_ADMIN`).
 - `hdparm` 9.56 or later if SATA drives are present.
-- Optional: `perccli64` or `storcli64` for RAID controller inventory; required for `--raid-reset` and for SATA drives the controller erases. Found in `$PATH` or `/opt/MegaRAID/{perccli,storcli}`, or set with `--raid-cli`. It is looked for only when needed; if it is missing, the drives that need it are reported `UNHANDLED` or `FAIL` with that reason.
+- `perccli64` or `storcli64` if disks on a PERC/MegaRAID controller are present, or with `--raid-reset`. Found in `$PATH` or `/opt/MegaRAID/{perccli,storcli}`, or set with `--raid-cli`.
+
+Before anything is written, the tool checks that what this host needs is there: hdparm when SATA drives are present, the controller CLI when PERC/MegaRAID disks are present or `--raid-reset` is given. Excluded, in-use, removable and USB disks do not count. If a tool is missing, it exits with code 1, naming the tool and the disk that needs it, and writes no report.
 
 The binary is static (`CGO_ENABLED=0`) and has no other runtime dependencies. It is meant to run from a minimal maintenance OS, for example a PXE-booted environment used between deployments.
 
@@ -116,7 +118,7 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | 0 | Every in-scope drive was erased and verified. In inventory mode: every in-scope drive has a method |
-| 1 | At least one drive `FAIL`ed, no drive was found, or bad arguments |
+| 1 | At least one drive `FAIL`ed, no drive was found, bad arguments, or a required tool is missing |
 | 2 | No failures, but some drives are `UNHANDLED` and need another method before the server is released |
 
 A typical reclamation hook:

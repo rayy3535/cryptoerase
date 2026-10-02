@@ -202,3 +202,25 @@ func TestExplicitPathMissing(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestCheck(t *testing.T) {
+	ctx := context.Background()
+	notFound := func(string) (string, error) { return "", errors.New("not found") }
+	if err := (&Lister{LookPath: notFound}).Check(ctx); err == nil ||
+		!strings.Contains(err.Error(), "none of perccli64, perccli, storcli64, storcli in $PATH or /opt/MegaRAID/perccli, /opt/MegaRAID/storcli") {
+		t.Fatalf("none: %v", err)
+	}
+	if err := (&Lister{Path: "/srv/perccli64", LookPath: notFound}).Check(ctx); err == nil || !strings.Contains(err.Error(), "(/srv/perccli64)") {
+		t.Fatalf("explicit missing: %v", err)
+	}
+	found := func(n string) (string, error) { return n, nil }
+	if err := (&Lister{Path: "/srv/perccli64", LookPath: found}).Check(ctx); err != nil {
+		t.Fatalf("explicit: %v", err)
+	}
+	if err := (&Lister{LookPath: found}).Check(ctx); err != nil {
+		t.Fatalf("in PATH: %v", err)
+	}
+	if err := (&Lister{Path: filepath.Join(t.TempDir(), "perccli64")}).Check(ctx); err == nil {
+		t.Fatal("real lookup of a missing file passed")
+	}
+}

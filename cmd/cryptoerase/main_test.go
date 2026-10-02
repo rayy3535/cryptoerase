@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -214,6 +215,16 @@ func TestRunErrorAndUnwritableReport(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run([]string{"--inventory"}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "boom") {
 		t.Fatalf("code %d stderr %q", code, errb.String())
+	}
+
+	fakeRun(t, nil, fmt.Errorf("%w; nothing was changed: SATA drive sda: hdparm not found", cryptoerase.ErrToolMissing))
+	errb.Reset()
+	if code := run([]string{"--yes"}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "required tool missing; nothing was changed") ||
+		!strings.Contains(errb.String(), "hdparm not found") {
+		t.Fatalf("code %d stderr %q", code, errb.String())
+	}
+	if entries, _ := os.ReadDir("."); len(entries) != 0 {
+		t.Fatalf("report written: %v", entries)
 	}
 
 	fakeRun(t, report("PASS"), nil)
