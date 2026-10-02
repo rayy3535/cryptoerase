@@ -5,6 +5,8 @@
 - `--raid-reset` (`Options.RAIDReset`): on Dell PERC / Broadcom MegaRAID controllers, delete the virtual disks the running OS does not use, remove hot spares, set the drives to non-RAID, wait for them to appear, and erase each drive directly. Controllers with foreign configurations, failed or rebuilding drives, or a virtual disk that cannot be matched to its block device while the OS uses the controller are left unchanged. Exposed drives that never reach the OS are reported `FAIL`. With `--inventory`, only the plan is reported.
 - `perc.Lister` reads the full controller configuration (`Controllers`) and can delete virtual disks, remove hot spares and set drives to JBOD. Drives carry serial numbers and WWNs.
 - Drive records include the SCSI `wwid` under `attach`.
+- SATA: when the controller in front of the drive passes ATA commands through but returns no ATA registers (hdparm: `bad/missing sense data`; seen on Dell PERC with the drive in non-RAID mode), the drive is reported `FAIL` with that reason before markers are written or SANITIZE is sent. Before, SANITIZE was sent and the drive failed afterwards with "sanitize did not report 'Completed Without Error'", leaving it unknown whether the drive had been erased. SANITIZE STATUS EXT (read-only) now also runs in `--inventory`, so this and a frozen sanitize show up there.
+- `ata.ErrNoRegisters`; the hdparm backend returns it from `SanitizeStatus` and `SanitizeCryptoScramble`.
 
 ## v0.1.0-rc.2 (2026-10-01)
 

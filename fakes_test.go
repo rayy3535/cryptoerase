@@ -393,7 +393,7 @@ type fakeATADisk struct {
 	host      *testHost
 	path      string
 	words     []uint16
-	behaviour string // ok | reject | noop
+	behaviour string // ok | reject | noop | noregs (status) | noregs-scramble
 	frozen    bool
 
 	mu      sync.Mutex
@@ -401,6 +401,11 @@ type fakeATADisk struct {
 	lastOK  bool
 	calls   []string
 }
+
+// percSense is what hdparm prints when a Dell PERC in front of a non-RAID
+// SATA drive answers an ATA PASS-THROUGH with fixed-format sense and zeroed
+// registers.
+const percSense = "SG_IO: bad/missing sense data, sb[]:  70 00 01 00 00 00 00 0d 00 00 00 00 00 1d 00 00 00 00 00 00 00 00"
 
 type fakeATA struct {
 	mu    sync.Mutex // disks can appear while a run is going on
@@ -465,6 +470,9 @@ func (a *fakeATA) SanitizeStatus(ctx context.Context, dev string) (*ata.Sanitize
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.calls = append(d.calls, "status")
+	if d.behaviour == "noregs" {
+		return nil, &ata.HdparmError{Args: []string{"--sanitize-status", dev}, Err: ata.ErrNoRegisters, Stderr: percSense}
+	}
 	if d.frozen {
 		return &ata.SanitizeStatus{State: "SD1", Frozen: true}, nil
 	}
@@ -488,6 +496,8 @@ func (a *fakeATA) SanitizeCryptoScramble(ctx context.Context, dev string) error 
 		return &ata.HdparmError{Args: []string{dev}, Err: errors.New("exit status 5"), Stderr: "SANITIZE device error reason: Device in FROZEN state"}
 	case "noop":
 		d.lastOK, d.pending = true, 1
+	case "noregs-scramble":
+		return &ata.HdparmError{Args: []string{"--sanitize-crypto-scramble", dev}, Err: ata.ErrNoRegisters, Stderr: percSense}
 	default:
 		fill(d.host.t, d.path, false)
 		d.lastOK, d.pending = true, 2

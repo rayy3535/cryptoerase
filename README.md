@@ -148,7 +148,7 @@ On a Dell PERC or Broadcom MegaRAID controller in RAID mode, the OS sees virtual
 
 Every command run (or, with `--inventory`, planned) is in the report under `raid_reset`. A drive that was to be exposed but never reached the OS is reported `FAIL`, so its data cannot be left behind unnoticed. Drives stay non-RAID afterwards.
 
-Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the controller and firmware; if IDENTIFY does not get through, the drive is reported `UNHANDLED` as usual.
+Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the controller and firmware; if IDENTIFY does not get through, the drive is reported `UNHANDLED` as usual. Some controllers forward ATA commands but not the drive's registers (seen on a PERC H355: fixed-format sense, all register fields zero), so the outcome of a sanitize cannot be read back. Such a drive is reported `FAIL` before anything is written or sent, in `--inventory` as well.
 
 ## Library
 

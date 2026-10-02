@@ -152,3 +152,30 @@ esac
 		t.Fatalf("frozen error: %v", err)
 	}
 }
+
+// hdparm behind a Dell PERC with the drive in non-RAID mode: the controller
+// answers with fixed-format sense and zeroed registers; hdparm complains on
+// stderr, then prints an idle status (stdout) and exits 0.
+func TestHdparmNoRegisters(t *testing.T) {
+	h := fakeHdparm(t, `
+sense='SG_IO: bad/missing sense data, sb[]:  70 00 01 00 00 00 00 0d 00 00 00 00 00 1d 00 00 00 00 00 00 00 00'
+case "$1" in
+  --sanitize-status)
+    echo "Issuing SANITIZE_STATUS command"
+    echo "$sense" >&2
+    printf 'Sanitize status:\n    State:    SD0 Sanitize Idle\n' ;;
+  --yes-i-know-what-i-am-doing)
+    echo "Issuing SANITIZE_CRYPTO_SCRAMBLE command"
+    echo "$sense" >&2
+    echo "Operation started in background" ;;
+esac
+`)
+	ctx := context.Background()
+	st, err := h.SanitizeStatus(ctx, "/dev/sda")
+	if st != nil || !errors.Is(err, ErrNoRegisters) || !strings.Contains(err.Error(), "--sanitize-status /dev/sda: SG_IO: bad/missing sense data, sb[]:  70 00 01") {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+	if err := h.SanitizeCryptoScramble(ctx, "/dev/sda"); !errors.Is(err, ErrNoRegisters) {
+		t.Fatalf("scramble: %v", err)
+	}
+}

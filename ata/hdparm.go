@@ -40,7 +40,8 @@ func (e *HdparmError) Error() string {
 
 func (e *HdparmError) Unwrap() error { return e.Err }
 
-func (h *Hdparm) run(ctx context.Context, args ...string) (string, error) {
+// run returns hdparm's stdout and stderr.
+func (h *Hdparm) run(ctx context.Context, args ...string) (string, string, error) {
 	path := h.Path
 	if path == "" {
 		path = "hdparm"
@@ -59,14 +60,19 @@ func (h *Hdparm) run(ctx context.Context, args ...string) (string, error) {
 	// pipes, stop waiting for them shortly after.
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), &HdparmError{Args: args, Err: err, Stderr: stderr.String() + stdout.String()}
+		return stdout.String(), stderr.String(), &HdparmError{Args: args, Err: err, Stderr: stderr.String() + stdout.String()}
 	}
-	return stdout.String(), nil
+	return stdout.String(), stderr.String(), nil
 }
+
+// noRegisters reports whether hdparm got no ATA registers back for a
+// command it sent with SG_IO. hdparm then prints the SCSI sense buffer it
+// could not decode and carries on with zeroed registers.
+func noRegisters(out string) bool { return strings.Contains(out, "bad/missing sense data") }
 
 // Identify runs `hdparm --Istdout DEV` and decodes the 256 hex words.
 func (h *Hdparm) Identify(ctx context.Context, dev string) (*Identify, error) {
-	out, err := h.run(ctx, "--Istdout", dev)
+	out, _, err := h.run(ctx, "--Istdout", dev)
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +114,16 @@ var (
 	reProgress = regexp.MustCompile(`Progress:\s+0x([0-9a-fA-F]+)`)
 )
 
-// SanitizeStatus runs `hdparm --sanitize-status DEV`.
+// SanitizeStatus runs `hdparm --sanitize-status DEV`. It returns an error
+// wrapping ErrNoRegisters when the status could not be read back.
 func (h *Hdparm) SanitizeStatus(ctx context.Context, dev string) (*SanitizeStatus, error) {
-	out, err := h.run(ctx, "--sanitize-status", dev)
+	args := []string{"--sanitize-status", dev}
+	out, errout, err := h.run(ctx, args...)
 	if err != nil {
 		return nil, err
+	}
+	if noRegisters(errout + out) {
+		return nil, &HdparmError{Args: args, Err: ErrNoRegisters, Stderr: errout}
 	}
 	return ParseSanitizeStatus(out)
 }
@@ -141,9 +152,12 @@ func ParseSanitizeStatus(out string) (*SanitizeStatus, error) {
 // SanitizeCryptoScramble runs
 // `hdparm --yes-i-know-what-i-am-doing --sanitize-crypto-scramble DEV`.
 func (h *Hdparm) SanitizeCryptoScramble(ctx context.Context, dev string) error {
-	out, err := h.run(ctx, "--yes-i-know-what-i-am-doing", "--sanitize-crypto-scramble", dev)
+	out, errout, err := h.run(ctx, "--yes-i-know-what-i-am-doing", "--sanitize-crypto-scramble", dev)
 	if err != nil {
 		return err
+	}
+	if noRegisters(errout + out) {
+		return &HdparmError{Args: []string{"--sanitize-crypto-scramble", dev}, Err: ErrNoRegisters, Stderr: errout}
 	}
 	if !strings.Contains(out, "Operation started in background") {
 		return &HdparmError{Args: []string{"--sanitize-crypto-scramble", dev}, Err: errors.New("unexpected output"), Stderr: out}
@@ -153,7 +167,7 @@ func (h *Hdparm) SanitizeCryptoScramble(ctx context.Context, dev string) error {
 
 // Version returns the first line of `hdparm -V`.
 func (h *Hdparm) Version(ctx context.Context) string {
-	out, err := h.run(ctx, "-V")
+	out, _, err := h.run(ctx, "-V")
 	if err != nil {
 		return ""
 	}

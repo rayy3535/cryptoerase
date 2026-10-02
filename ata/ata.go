@@ -12,6 +12,7 @@ package ata
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
 
@@ -19,10 +20,12 @@ import (
 type Backend interface {
 	// Identify returns the 512-byte IDENTIFY DEVICE data.
 	Identify(ctx context.Context, dev string) (*Identify, error)
-	// SanitizeStatus issues SANITIZE STATUS EXT.
+	// SanitizeStatus issues SANITIZE STATUS EXT. The error wraps
+	// ErrNoRegisters when the status did not come back from the drive.
 	SanitizeStatus(ctx context.Context, dev string) (*SanitizeStatus, error)
 	// SanitizeCryptoScramble issues SANITIZE CRYPTO SCRAMBLE EXT. The command
-	// returns once the operation has started.
+	// returns once the operation has started. The error wraps ErrNoRegisters
+	// when the drive's response did not come back.
 	SanitizeCryptoScramble(ctx context.Context, dev string) error
 	// Version describes the backend for the report.
 	Version(ctx context.Context) string
@@ -129,6 +132,13 @@ func (id *Identify) Security() Security {
 		EnhancedErase: w&0x20 != 0,
 	}
 }
+
+// ErrNoRegisters means the command went through a SCSI-to-ATA translation
+// layer that did not return the drive's ATA registers, so its outcome
+// cannot be known. RAID controllers that pass SATA drives through as
+// non-RAID disks (Dell PERC, Broadcom MegaRAID) do this: they answer with a
+// fixed-format sense buffer whose register fields are all zero.
+var ErrNoRegisters = errors.New("no ATA registers returned (SCSI/ATA translation by the controller); the command's outcome cannot be read")
 
 // SanitizeStatus is the decoded result of SANITIZE STATUS EXT.
 type SanitizeStatus struct {
