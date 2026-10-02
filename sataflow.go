@@ -80,7 +80,7 @@ func (r *runner) percDisk(ctx context.Context, rec *DriveRecord, driver string) 
 			sed++
 		}
 	}
-	return r.done(rec, Unhandled, fmt.Sprintf("PERC virtual disk; %d physical drive(s) behind the controller, %d SED. SED/ISE drives: delete the virtual disk, then crypto-erase via iDRAC/PERC. Other drives: set them non-RAID (or the controller to HBA mode) and rerun", len(r.percDrives), sed))
+	return r.done(rec, Unhandled, fmt.Sprintf("PERC virtual disk; %d physical drive(s) behind the controller, %d SED. Rerun with --raid-reset to delete the virtual disk, set its drives to non-RAID and erase each one", len(r.percDrives), sed))
 }
 
 func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver string) *DriveRecord {

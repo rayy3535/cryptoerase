@@ -59,9 +59,9 @@ NIST SP 800-88r2 §4.5.1 asks for completion status, errors and device health, a
 
 - Linux, amd64 or arm64, running as root (admin passthrough needs `CAP_SYS_ADMIN`).
 - `hdparm` 9.56 or later if SATA drives are present.
-- `perccli64` or `storcli64` if disks on a PERC/MegaRAID controller are present, or with `--raid-reset`. Found in `$PATH` or `/opt/MegaRAID/{perccli,storcli}`, or set with `--raid-cli`.
+- `perccli64` or `storcli64` if a PERC/MegaRAID controller is present, or with `--raid-reset`. Found in `$PATH` or `/opt/MegaRAID/{perccli,storcli}`, or set with `--raid-cli`.
 
-Before anything is written, the tool checks that what this host needs is there: hdparm when SATA drives are present, the controller CLI when PERC/MegaRAID disks are present or `--raid-reset` is given. Excluded, in-use, removable and USB disks do not count. If a tool is missing, it exits with code 1, naming the tool and the disk that needs it, and writes no report.
+Before anything is written, the tool checks that what this host needs is there: hdparm when SATA drives are present, the controller CLI when a PERC/MegaRAID controller is present or `--raid-reset` is given. Excluded, in-use, removable and USB disks do not count. If a tool is missing, it exits with code 1, naming the tool and the disk that needs it, and writes no report.
 
 The binary is static (`CGO_ENABLED=0`) and has no other runtime dependencies. It is meant to run from a minimal maintenance OS, for example a PXE-booted environment used between deployments.
 
@@ -151,6 +151,12 @@ On a Dell PERC or Broadcom MegaRAID controller in RAID mode, the OS sees virtual
 
 Every command run (or, with `--inventory`, planned) is in the report under `raid_reset`. A drive that was to be exposed but never reached the OS is reported `FAIL`, so its data cannot be left behind unnoticed. Drives stay non-RAID afterwards.
 
+Drives the OS cannot see at all, such as drives in state Ready (UGood, "Ready" in iDRAC) and hot spares, are listed from the controller and get a record of their own, named by their slot (`/c0/e68/s0`). They are reported as follows:
+- with `--raid-reset`, they are set to non-RAID and erased (`PLANNED` with `--inventory`);
+- without `--raid-reset`, they are `UNHANDLED`, so the run cannot pass while they still hold data.
+
+For this, a PERC/MegaRAID CLI is required whenever such a controller is present, even if no disk on it is visible.
+
 Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the controller and firmware; if IDENTIFY does not get through, the drive is reported `UNHANDLED` as usual.
 
 ### SATA drives the controller erases
@@ -223,7 +229,7 @@ Rule format, one per line: `model regex ; firmware regex ; minimum ; reference`.
 
 - **SAS drives:** SCSI SANITIZE is not implemented.
 - **HDDs:** cryptographic erase is not applicable to drives that do not encrypt; use overwrite.
-- **Drives behind RAID virtual disks without `--raid-reset`:** they are listed, not erased. Use `--raid-reset`, the controller's own cryptographic erase for SED/ISE drives, or switch the drives to non-RAID / HBA mode and rerun. RAID controllers other than PERC/MegaRAID are not supported.
+- **Drives behind PERC/MegaRAID without `--raid-reset`:** drives in a virtual disk, in state Ready or hot spares are listed (`UNHANDLED`), not erased. Use `--raid-reset`. RAID controllers other than PERC/MegaRAID are not supported.
 - **TCG Opal drives with a locked range, or ATA drives with a user password set:** these need a PSID revert or unlock first. They are reported `FAIL`.
 - **NVMe controllers with no namespace attached:** recreate the namespace layout first.
 - **Windows and macOS:** not supported.

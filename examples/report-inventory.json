@@ -11,7 +11,7 @@
   },
   "tool": {
     "name": "cryptoerase",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "go_version": "go1.27.1",
     "nvme_transport": "Linux NVME_IOCTL_ADMIN_CMD",
     "ata_backend": "hdparm v9.65"
@@ -169,7 +169,7 @@
         ]
       },
       "result": "UNHANDLED",
-      "reason": "PERC virtual disk; 2 physical drive(s) behind the controller, 0 SED. SED/ISE drives: delete the virtual disk, then crypto-erase via iDRAC/PERC. Other drives: set them non-RAID (or the controller to HBA mode) and rerun",
+      "reason": "PERC virtual disk; 2 physical drive(s) behind the controller, 0 SED. Rerun with --raid-reset to delete the virtual disk, set its drives to non-RAID and erase each one",
       "started_at": "2026-01-01T00:00:00Z",
       "finished_at": "2026-01-01T00:00:30Z"
     },

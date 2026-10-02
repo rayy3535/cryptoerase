@@ -120,6 +120,7 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if len(r.raidExposed) > 0 {
 		r.reconcileRAID(rep)
 	}
+	r.reportHiddenDrives(ctx, rep)
 	rep.Host = r.host()
 	rep.Tool = Tool{
 		Name:          "cryptoerase",
