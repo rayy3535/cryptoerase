@@ -12,8 +12,9 @@ import (
 )
 
 // preflight checks, before anything is changed, that the tools the run will
-// need are available: hdparm for SATA drives, the PERC/MegaRAID CLI for disks
-// on such a controller or for RAIDReset. A missing tool stops the run with
+// need are available: hdparm for SATA drives, the PERC/MegaRAID CLI when such
+// a controller is present (drives behind it may not be visible to the OS) or
+// for RAIDReset. A missing tool stops the run with
 // ErrToolMissing rather than failing drive after drive.
 //
 // Only disks the run would work on count: removable, USB, empty, excluded
@@ -44,6 +45,11 @@ func (r *runner) preflight(ctx context.Context) error {
 		if driver == "megaraid_sas" || strings.Contains(model, "PERC") {
 			percWhy = "PERC/MegaRAID disk " + name
 		}
+	}
+	// Drives in state Ready or hot spares are not visible to the OS at all;
+	// only the controller CLI can list them.
+	if host := r.megaraidHost(); host != "" && percWhy == "" {
+		percWhy = "PERC/MegaRAID controller " + host
 	}
 	var errs []error
 	check := func(why string, backend any) {

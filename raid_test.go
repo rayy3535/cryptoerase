@@ -33,6 +33,7 @@ type fakeRAID struct {
 	events    []perc.Event      // oldest first
 	eventsErr error
 	onEvents  func() // called on every Events
+	ctrlCalls int
 }
 
 func (f *fakeRAID) List(context.Context) ([]perc.Drive, error) {
@@ -44,6 +45,9 @@ func (f *fakeRAID) List(context.Context) ([]perc.Drive, error) {
 }
 
 func (f *fakeRAID) Controllers(context.Context) ([]perc.Controller, error) {
+	f.mu.Lock()
+	f.ctrlCalls++
+	f.mu.Unlock()
 	return f.ctrls, f.ctrlErr
 }
 
@@ -230,8 +234,10 @@ func TestRAIDResetHotSpareAndJBOD(t *testing.T) {
 	c := &f.ctrls[0]
 	c.Drives = append(c.Drives,
 		pd("64:2", 2, "DHS", "-", "EXAMPLESATA0003", "5002538E00000003"),
-		pd("64:3", 3, "JBOD", "-", "EXAMPLESATA0004", "5002538E00000004"), // already visible: left alone
+		pd("64:3", 3, "JBOD", "-", "EXAMPLESATA0004", "5002538E00000004"), // already visible as sde: left alone
 		pd("64:4", 4, "UGood", "-", "EXAMPLESATA0005", "5002538E00000005"))
+	h.addSCSI("sde", scsiSpec{vendor: "ATA", driver: "megaraid_sas", wwid: "naa.5002538e00000004",
+		ata: &fakeATADisk{words: ataWords("SAMSUNG MZ7LH960HAJR-00005", "EXAMPLESATA0004", "F", true, false)}})
 	for i, slot := range []string{"64:2", "64:4"} {
 		name, serial, wwn := fmt.Sprintf("sd%c", 'f'+i), fmt.Sprintf("EXAMPLESATA000%d", 3+2*i), fmt.Sprintf("naa.5002538e0000000%d", 3+2*i)
 		f.jbod[slot] = func() {
@@ -244,7 +250,7 @@ func TestRAIDResetHotSpareAndJBOD(t *testing.T) {
 	if strings.Join(f.calls, "|") != want {
 		t.Fatalf("calls %v", f.calls)
 	}
-	if rep.Result != "PASS" || len(rep.Drives) != 4 {
+	if rep.Result != "PASS" || len(rep.Drives) != 5 {
 		t.Fatalf("result %s drives %d", rep.Result, len(rep.Drives))
 	}
 }

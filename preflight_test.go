@@ -47,6 +47,11 @@ func TestPreflight(t *testing.T) {
 				h.addSCSI("sda", scsiSpec{vendor: "DELL", model: "PERC H355 Front", driver: "megaraid_sas"})
 			},
 			wantError: []string{"PERC/MegaRAID disk sda: RAID controller CLI not found"}},
+		{name: "PERC controller with no visible disk, without CLI", percErr: errNoCLI,
+			setup: func(h *testHost, o *Options) {
+				write(t, filepath.Join(h.sys, "class/scsi_host/host9/proc_name"), "megaraid_sas\n")
+			},
+			wantError: []string{"PERC/MegaRAID controller host9: RAID controller CLI not found"}},
 		{name: "RAID reset without either", ataErr: errNoHdparm, percErr: errNoCLI,
 			setup:     func(h *testHost, o *Options) { o.RAIDReset = true },
 			wantError: []string{"RAID reset requested: hdparm not found", "RAID reset requested: RAID controller CLI not found"}},

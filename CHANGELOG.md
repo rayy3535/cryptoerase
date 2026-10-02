@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.1 (2026-10-02)
+
+- Drives behind a PERC/MegaRAID controller that the OS cannot see (state Ready / UGood, hot spares, drives in no virtual disk) were missing from the report. A host whose only other drives passed reported `PASS` while those drives still held data. They now get a record named by their slot (`/c0/e68/s0`):
+  - without `--raid-reset`: `UNHANDLED`, with the hint to rerun with `--raid-reset`;
+  - with `--raid-reset --inventory`: `PLANNED` (`raid-reset`); before, they appeared only under `raid_reset`, not in the drive table;
+  - with `--raid-reset` in erase mode: set to non-RAID and erased, as before.
+
+  If the controller cannot be listed, a `RAID controller hostN` record is `UNHANDLED`.
+- The controller CLI is required whenever a megaraid_sas SCSI host exists, even if no disk on it is visible, since only the CLI can list such drives.
+- The record of a PERC virtual disk points to `--raid-reset`.
+
 ## v0.2.0 (2026-10-02)
 
 First release with RAID controller support: `--raid-reset`, and cryptographic erase by the controller for SATA drives behind a Dell PERC / Broadcom MegaRAID whose ATA status does not come back. Both were added in 0.1.0-rc.3 (below) and tested on a PowerEdge R7525 with a PERC H355.
