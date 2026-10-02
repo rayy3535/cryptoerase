@@ -21,7 +21,7 @@ func (r *runner) scsiDrive(ctx context.Context, name string) *DriveRecord {
 	vendor := readTrim(filepath.Join(p, "device", "vendor"))
 	model := readTrim(filepath.Join(p, "device", "model"))
 	driver := r.scsiDriver(name)
-	rec.Attach = &Attach{Driver: driver, SCSIVendor: vendor, SCSIModel: model}
+	rec.Attach = &Attach{Driver: driver, SCSIVendor: vendor, SCSIModel: model, WWID: readTrim(filepath.Join(p, "device", "wwid"))}
 	resolved, _ := filepath.EvalSymlinks(p)
 
 	if readTrim(filepath.Join(p, "removable")) == "1" || strings.Contains(resolved, "/usb") {
@@ -54,6 +54,17 @@ func (r *runner) scsiDrive(ctx context.Context, name string) *DriveRecord {
 }
 
 func (r *runner) percDisk(ctx context.Context, rec *DriveRecord, driver string) *DriveRecord {
+	if note, ok := r.raidNotes[filepath.Base(rec.Device)]; ok {
+		switch {
+		case note.skipped != "":
+			return r.done(rec, Unhandled, "PERC virtual disk; RAID reset skipped this controller: "+note.skipped)
+		case note.deleted && r.opts.Mode == ModeInventory:
+			rec.Planned = "raid-reset"
+			return r.done(rec, Planned, fmt.Sprintf("PERC virtual disk; the RAID reset deletes it and sets its %d drive(s) to non-RAID, then each drive is checked and erased on its own", note.drives))
+		case note.deleted:
+			return r.done(rec, Fail, "PERC virtual disk still present after the RAID reset deleted it")
+		}
+	}
 	r.percOnce.Do(func() { r.percDrives, r.percErr = r.opts.PERC.List(ctx) })
 	switch {
 	case r.percErr != nil:

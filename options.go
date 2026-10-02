@@ -108,6 +108,15 @@ type Options struct {
 	OpenBlock func(path string, direct, write bool) (blockdev.Device, error)
 	ATA       ata.Backend
 	PERC      PERCLister
+
+	// RAIDReset removes the RAID virtual disks that the running OS does not
+	// use and sets their drives to non-RAID (JBOD), so each drive is then
+	// erased on its own. It needs perccli64/storcli64 and a PERC backend
+	// that implements RAIDResetter. In inventory mode only the plan is
+	// reported.
+	RAIDReset bool
+	// RAIDWait bounds the wait for exposed drives to appear (default 60 s).
+	RAIDWait time.Duration
 }
 
 // ErrNotConfirmed is returned when ModeErase is requested without Confirm.
@@ -124,7 +133,7 @@ func (o *Options) withDefaults() (Options, error) {
 	if v.Samples < 2 {
 		return v, errors.New("cryptoerase: Samples must be >= 2")
 	}
-	if v.PollInterval < 0 || v.NoProgressTimeout < 0 || v.FormatTimeout < 0 || v.NodeWait < 0 {
+	if v.PollInterval < 0 || v.NoProgressTimeout < 0 || v.FormatTimeout < 0 || v.NodeWait < 0 || v.RAIDWait < 0 {
 		return v, errors.New("cryptoerase: durations must not be negative")
 	}
 	if v.FirmwarePolicy == nil {
@@ -141,6 +150,9 @@ func (o *Options) withDefaults() (Options, error) {
 	}
 	if v.NodeWait == 0 {
 		v.NodeWait = 10 * time.Second
+	}
+	if v.RAIDWait == 0 {
+		v.RAIDWait = 60 * time.Second
 	}
 	if v.Logger == nil {
 		v.Logger = slog.Default()

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `--raid-reset` (`Options.RAIDReset`): on Dell PERC / Broadcom MegaRAID controllers, delete the virtual disks the running OS does not use, remove hot spares, set the drives to non-RAID, wait for them to appear, and erase each drive directly. Controllers with foreign configurations, failed or rebuilding drives, or a virtual disk that cannot be matched to its block device while the OS uses the controller are left unchanged. Exposed drives that never reach the OS are reported `FAIL`. With `--inventory`, only the plan is reported.
+- `perc.Lister` reads the full controller configuration (`Controllers`) and can delete virtual disks, remove hot spares and set drives to JBOD. Drives carry serial numbers and WWNs.
+- Drive records include the SCSI `wwid` under `attach`.
+
 ## v0.1.0-rc.2 (2026-10-01)
 
 - The read-write handle used to write the verification markers stays open until the erase command has finished, and verification reopens the device read-only. Closing the handle earlier made udev re-read the partition table while the drive was sanitizing; the drive rejected the read, and the kernel logged `Buffer I/O error ... logical block 0` and `unable to read RDB block 0`. Erase results were not affected.

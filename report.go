@@ -38,6 +38,7 @@ type Report struct {
 	FinishedAt time.Time      `json:"finished_at"`
 	Result     string         `json:"result"` // PASS, FAIL or INCOMPLETE
 	Counts     map[Result]int `json:"counts"`
+	RAIDReset  []*RAIDReset   `json:"raid_reset,omitempty"`
 	Drives     []*DriveRecord `json:"drives"`
 }
 
@@ -91,6 +92,7 @@ type Tool struct {
 // PolicySummary records the policy the run applied.
 type PolicySummary struct {
 	AllowFormat   bool     `json:"allow_format"`
+	RAIDReset     bool     `json:"raid_reset,omitempty"`
 	Samples       int      `json:"samples"`
 	FirmwareRules []string `json:"firmware_rules"`
 	Exclude       []string `json:"exclude,omitempty"`
@@ -139,6 +141,10 @@ type Attach struct {
 	Driver     string `json:"driver,omitempty"`
 	SCSIVendor string `json:"scsi_vendor,omitempty"`
 	SCSIModel  string `json:"scsi_model,omitempty"`
+	WWID       string `json:"wwid,omitempty"`
+	// RAIDSlot is the controller slot ("/c0/e64/s1") of a drive that the
+	// RAID reset exposed.
+	RAIDSlot string `json:"raid_slot,omitempty"`
 }
 
 // NVMeInfo is the controller's erase-relevant identification.

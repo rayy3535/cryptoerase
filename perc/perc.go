@@ -31,6 +31,8 @@ type Drive struct {
 	Media      string `json:"media,omitempty"`
 	SED        string `json:"sed,omitempty"`
 	Model      string `json:"model,omitempty"`
+	Serial     string `json:"serial,omitempty"`
+	WWN        string `json:"wwn,omitempty"`
 	Tool       string `json:"tool"`
 }
 
@@ -44,44 +46,27 @@ type Lister struct {
 // List returns the physical drives, or nil with no error when no CLI is
 // installed.
 func (l *Lister) List(ctx context.Context) ([]Drive, error) {
-	look := l.LookPath
-	if look == nil {
-		look = exec.LookPath
+	path, name := l.tool()
+	if path == "" {
+		return nil, nil
 	}
-	run := l.Exec
-	if run == nil {
-		run = runCommand
-	}
-	timeout := l.Timeout
-	if timeout == 0 {
-		timeout = 60 * time.Second
-	}
-	for _, t := range Tools {
-		path, err := look(t)
-		if err != nil {
+	var lastErr error
+	for _, args := range [][]string{{"/call/eall/sall", "show", "J"}, {"/call/sall", "show", "J"}} {
+		out, err := l.exec(ctx, path, args...)
+		if err != nil && len(out) == 0 {
+			lastErr = err
 			continue
 		}
-		var lastErr error
-		for _, args := range [][]string{{"/call/eall/sall", "show", "J"}, {"/call/sall", "show", "J"}} {
-			cctx, cancel := context.WithTimeout(ctx, timeout)
-			out, err := run(cctx, path, args...)
-			cancel()
-			if err != nil && len(out) == 0 {
-				lastErr = err
-				continue
-			}
-			drives, perr := Parse(out, t)
-			if perr == nil && len(drives) > 0 {
-				return drives, nil
-			}
-			lastErr = perr
+		drives, perr := Parse(out, name)
+		if perr == nil && len(drives) > 0 {
+			return drives, nil
 		}
-		if lastErr == nil {
-			lastErr = fmt.Errorf("%s returned no drives", t)
-		}
-		return nil, lastErr
+		lastErr = perr
 	}
-	return nil, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("%s returned no drives", name)
+	}
+	return nil, lastErr
 }
 
 func runCommand(ctx context.Context, path string, args ...string) ([]byte, error) {

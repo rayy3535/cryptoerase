@@ -127,6 +127,7 @@ type scsiSpec struct {
 	vendor, model, driver string
 	rotational, removable int
 	usb                   bool
+	wwid                  string       // sysfs device/wwid, if set
 	ata                   *fakeATADisk // nil: IDENTIFY fails
 }
 
@@ -142,6 +143,9 @@ func (h *testHost) addSCSI(name string, s scsiSpec) {
 	blk := filepath.Join(devpath, "block", name)
 	write(h.t, filepath.Join(devpath, "vendor"), fmt.Sprintf("%-8s\n", s.vendor))
 	write(h.t, filepath.Join(devpath, "model"), s.model+"\n")
+	if s.wwid != "" {
+		write(h.t, filepath.Join(devpath, "wwid"), s.wwid+"\n")
+	}
 	write(h.t, filepath.Join(blk, "queue/rotational"), strconv.Itoa(s.rotational))
 	write(h.t, filepath.Join(blk, "removable"), strconv.Itoa(s.removable))
 	write(h.t, filepath.Join(blk, "size"), strconv.Itoa(diskSize/512))
@@ -153,7 +157,7 @@ func (h *testHost) addSCSI(name string, s scsiSpec) {
 	if s.ata != nil {
 		s.ata.path = path
 		s.ata.host = h
-		h.ata.disks[path] = s.ata
+		h.ata.add(path, s.ata)
 	}
 }
 
@@ -398,7 +402,16 @@ type fakeATADisk struct {
 	calls   []string
 }
 
-type fakeATA struct{ disks map[string]*fakeATADisk }
+type fakeATA struct {
+	mu    sync.Mutex // disks can appear while a run is going on
+	disks map[string]*fakeATADisk
+}
+
+func (a *fakeATA) add(path string, d *fakeATADisk) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.disks[path] = d
+}
 
 func ataWords(model, serial, fw string, crypto, locked bool) []uint16 {
 	w := make([]uint16, 256)
@@ -427,7 +440,9 @@ func ataWords(model, serial, fw string, crypto, locked bool) []uint16 {
 }
 
 func (a *fakeATA) disk(dev string) (*fakeATADisk, error) {
+	a.mu.Lock()
 	d, ok := a.disks[dev]
+	a.mu.Unlock()
 	if !ok {
 		return nil, &ata.HdparmError{Args: []string{dev}, Err: errors.New("exit status 5"), Stderr: "SG_IO: bad/missing sense data"}
 	}
@@ -493,4 +508,12 @@ type fakePERC struct {
 func (p *fakePERC) List(ctx context.Context) ([]perc.Drive, error) {
 	p.calls.Add(1)
 	return p.drives, p.err
+}
+
+// removeSCSI makes a SCSI disk disappear, as the kernel does when a RAID
+// virtual disk is deleted.
+func (h *testHost) removeSCSI(name string) {
+	for _, p := range []string{filepath.Join(h.sys, "block", name), filepath.Join(h.sys, "class/block", name), filepath.Join(h.dev, name)} {
+		must(h.t, os.Remove(p))
+	}
 }
