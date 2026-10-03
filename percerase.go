@@ -9,9 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/rayy3535/cryptoerase/ata"
 	"github.com/rayy3535/cryptoerase/perc"
 )
 
@@ -46,12 +46,12 @@ type percTarget struct {
 
 // percEraseTarget checks whether the controller in front of a megaraid_sas
 // SATA drive can crypto-erase it. The error says why not.
-func (r *runner) percEraseTarget(ctx context.Context, rec *DriveRecord) (*percTarget, error) {
+func (r *runner) percEraseTarget(ctx context.Context, rec *DriveRecord, name string) (*percTarget, error) {
 	pe, ok := r.opts.PERC.(PERCEraser)
 	if !ok {
 		return nil, errors.New("the RAID backend cannot erase through the controller")
 	}
-	c, d, err := r.percDriveFor(ctx, pe, rec)
+	c, d, err := r.percDriveFor(ctx, pe, rec, name)
 	if err != nil {
 		return nil, err
 	}
@@ -67,17 +67,17 @@ func (r *runner) percEraseTarget(ctx context.Context, rec *DriveRecord) (*percTa
 	return &percTarget{pe: pe, c: c, d: d}, nil
 }
 
-// percSATA has the controller crypto-erase a SATA drive behind it. On PERC
-// controllers ATA pass-through is not a dependable way to sanitize: one
-// PERC H355 returned no ATA registers (the result cannot be read), another
-// PERC rejected SANITIZE outright.
+// percErase has the controller crypto-erase a drive behind it. For SATA
+// drives ATA pass-through is not a dependable alternative on PERC: one PERC
+// H355 returned no ATA registers (the result cannot be read), and a PERC
+// H730P rejected SANITIZE and then reported the drive not ready.
 //
 // Erase mode: write the markers through the OS; remove the disk from the
 // kernel, so nothing reads it while the controller hides it; set it
 // unconfigured good; "start erase crypto"; wait for "Erase completed" in the
 // controller event log; set it back to JBOD; wait for the disk to reappear;
 // verify the markers.
-func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver string, sec ata.Security, t *percTarget) *DriveRecord {
+func (r *runner) percErase(ctx context.Context, rec *DriveRecord, name, driver string, locked bool, t *percTarget) *DriveRecord {
 	pe, c, d := t.pe, t.c, t.d
 	slot := perc.Path(c.Index, d.Slot)
 	if rec.Attach == nil {
@@ -96,17 +96,30 @@ func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver st
 			rec.Command,
 			fmt.Sprintf("%s %s set jbod", c.Tool, slot),
 		}
-		return r.done(rec, Planned, fmt.Sprintf("SATA drive behind the %s controller; the controller erases it: set unconfigured good, start erase crypto, set back to non-RAID", driver))
+		return r.done(rec, Planned, fmt.Sprintf("drive behind the %s controller; the controller erases it: set unconfigured good, start erase crypto, set back to non-RAID", driver))
 	}
-	if sec.Locked {
+	if locked {
 		return r.done(rec, Fail, "ATA security is locked (a user password is set); unlock or PSID revert required")
 	}
 	if ctx.Err() != nil {
 		return r.done(rec, Fail, "interrupted before erase; drive not modified")
 	}
 
-	dev := r.devPath(name)
-	m, err := r.writeMarkers(dev)
+	orig := name
+	host := r.scsiHost(name)
+	m, err := r.writeMarkers(r.devPath(name))
+	if err != nil && errors.Is(err, syscall.EIO) {
+		// A PERC H730P left drives NOT READY after a SANITIZE sent through
+		// ATA pass-through, failing every read and write; a controller erase
+		// made them usable again. Erase once to recover, then erase again
+		// with markers.
+		again, rerr := r.percRecover(ctx, pe, pr, name, host, d, err)
+		if rerr != nil {
+			return r.done(rec, Fail, fmt.Sprintf("the drive rejects writes (%v), and a controller erase to make it usable again failed: %v; treat the drive as not erased", err, rerr))
+		}
+		name = again
+		m, err = r.writeMarkers(r.devPath(name))
+	}
 	if err != nil {
 		if errors.Is(err, errMarkerReadback) {
 			return r.done(rec, Fail, fmt.Sprintf("marker read-back mismatch before erase: %v", err))
@@ -118,7 +131,6 @@ func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver st
 	defer m.release()
 
 	start := time.Now()
-	host := r.scsiHost(name)
 	r.percMu.Lock()
 	jbodErr, eraseErr := r.percCryptoErase(ctx, pe, pr, name, host, d.Slot, m)
 	r.percMu.Unlock()
@@ -138,7 +150,7 @@ func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver st
 	if again == "" {
 		return r.done(rec, Fail, fmt.Sprintf("the controller logged %q, but the drive did not come back to the OS within %s after being set to non-RAID, so the erase could not be verified", pr.Event.Description, r.opts.RAIDWait))
 	}
-	if again != name {
+	if again != orig {
 		pr.ReattachedAs = r.devPath(again)
 	}
 	v, verr := r.verifyMarkers(r.devPath(again), m)
@@ -150,9 +162,34 @@ func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver st
 	return r.done(rec, res, reason)
 }
 
-// percDriveFor finds the controller drive behind a drive record, by serial
-// number or WWN.
-func (r *runner) percDriveFor(ctx context.Context, pe PERCEraser, rec *DriveRecord) (perc.Controller, perc.Drive, error) {
+// percRecover erases a drive that rejects writes through the controller,
+// without markers, and returns the block device it comes back as. pr keeps
+// the commands; Recovery records what happened.
+func (r *runner) percRecover(ctx context.Context, pe PERCEraser, pr *PERCErase, name, host string, d perc.Drive, cause error) (string, error) {
+	r.log.Warn("drive rejects writes; erasing it through the controller first", "device", r.devPath(name), "error", cause)
+	r.percMu.Lock()
+	jbodErr, eraseErr := r.percCryptoErase(ctx, pe, pr, name, host, d.Slot, nil)
+	r.percMu.Unlock()
+	switch {
+	case eraseErr != nil:
+		return "", eraseErr
+	case pr.Outcome != "completed":
+		return "", errors.New("controller event log: " + pr.Event.Description)
+	case jbodErr != nil:
+		return "", fmt.Errorf("setting the drive back to non-RAID failed: %w", jbodErr)
+	}
+	again := r.waitPERCDrive(ctx, d, host)
+	if again == "" {
+		return "", fmt.Errorf("the drive did not come back to the OS within %s", r.opts.RAIDWait)
+	}
+	pr.Recovery = fmt.Sprintf("the drive rejected writes (%v); a first controller erase (%q) made it writable again, then it was erased with markers", cause, pr.Event.Description)
+	pr.Outcome, pr.Event = "", nil
+	return again, nil
+}
+
+// percDriveFor finds the controller drive behind block device name: by the
+// record's serial number, or as blockMatchesDrive does.
+func (r *runner) percDriveFor(ctx context.Context, pe PERCEraser, rec *DriveRecord, name string) (perc.Controller, perc.Drive, error) {
 	r.ctrlOnce.Do(func() { r.ctrls, r.ctrlErr = pe.Controllers(ctx) })
 	switch {
 	case r.ctrlErr != nil:
@@ -160,26 +197,22 @@ func (r *runner) percDriveFor(ctx context.Context, pe PERCEraser, rec *DriveReco
 	case len(r.ctrls) == 0:
 		return perc.Controller{}, perc.Drive{}, errors.New("no PERC/MegaRAID CLI (perccli64, storcli64) to erase through the controller")
 	}
-	wwid := ""
-	if rec.Attach != nil {
-		wwid = rec.Attach.WWID
-	}
 	var hits []int
 	var found []perc.Drive
 	for i, c := range r.ctrls {
 		for _, d := range c.Drives {
-			if (d.Serial != "" && strings.EqualFold(strings.TrimSpace(rec.Serial), d.Serial)) || wwidMatches(wwid, d) {
+			if (d.Serial != "" && strings.EqualFold(strings.TrimSpace(rec.Serial), d.Serial)) || r.blockMatchesDrive(name, d) {
 				hits, found = append(hits, i), append(found, d)
 			}
 		}
 	}
 	switch len(found) {
 	case 0:
-		return perc.Controller{}, perc.Drive{}, fmt.Errorf("serial %q not found among the controller's drives", rec.Serial)
+		return perc.Controller{}, perc.Drive{}, fmt.Errorf("serial %q (and %s) not found among the controller's drives", rec.Serial, name)
 	case 1:
 		return r.ctrls[hits[0]], found[0], nil
 	}
-	return perc.Controller{}, perc.Drive{}, fmt.Errorf("serial %q matches %d controller drives", rec.Serial, len(found))
+	return perc.Controller{}, perc.Drive{}, fmt.Errorf("serial %q (and %s) matches %d controller drives", rec.Serial, name, len(found))
 }
 
 // percCryptoErase runs the controller commands. It records each command and

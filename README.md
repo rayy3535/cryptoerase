@@ -159,9 +159,13 @@ For this, a PERC/MegaRAID CLI is required whenever such a controller is present,
 
 Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the controller and firmware; if IDENTIFY does not get through, the drive is reported `UNHANDLED` as usual.
 
-### SATA drives the controller erases
+### Drives the controller erases
 
-Behind a PERC/MegaRAID controller (`megaraid_sas`), ATA pass-through is not a dependable way to sanitize a non-RAID SATA drive. Two PERCs each failed it in a different way:
+The OS sees a PERC/MegaRAID virtual disk on SCSI channel 2 or above (`0:2:0:0`), with the controller as its model. A drive the controller passes through (JBOD, non-RAID) is on channel 0 or 1 with its own vendor and model, and its SCSI target is its controller device ID (DID). A drive is matched to its controller slot by WWN, by serial number (in the wwid or VPD page 0x80), or, when there is a single megaraid_sas host, by that DID.
+
+**SAS drives and SATA hard disks** behind the controller cannot be sanitized through hdparm. They are erased by the controller if it reports them "Cryptographic Erase Capable" (ISE or SED); otherwise they are `UNHANDLED`, since overwriting is outside this tool's scope.
+
+**SATA SSDs:** behind a PERC/MegaRAID controller (`megaraid_sas`), ATA pass-through is not a dependable way to sanitize a non-RAID SATA drive. Two PERCs each failed it in a different way:
 - **PERC H355:** forwards ATA commands but returns none of the drive's registers (fixed-format sense, every register field zero; hdparm reports `bad/missing sense data`), so the outcome of a sanitize cannot be read.
 - **PERC H730P:** rejects SANITIZE with an I/O error. The drive nevertheless completes the sanitize, and the controller then reports it NOT READY (`Unexpected sense ... 2/05/00` in its event log) and fails every read and write until the drive is reset.
 
@@ -178,7 +182,9 @@ So a SATA drive behind such a controller is erased by the controller whenever th
 
 The drive passes only with `Erase completed` in the event log and every marker changed. The commands, the event and the new device name are in the report under `device_status.perc_erase`. In `--inventory` the drive is `PLANNED` with method `perc-crypto-erase`.
 
-If the controller cannot erase the drive, the tool falls back to SANITIZE through hdparm, and a failure there also states why the controller was not used. The controller cannot erase a drive that does not match exactly one controller drive by serial number or WWN, is not JBOD, or is not reported as crypto-erase capable. A drive the H730P left NOT READY after a pass-through SANITIZE comes back working after the controller erase.
+If the controller cannot erase a SATA SSD, the tool falls back to SANITIZE through hdparm, and a failure there also states why the controller was not used. The controller cannot erase a drive that does not match exactly one controller drive, is not JBOD, or is not reported as crypto-erase capable.
+
+A drive that rejects writes before the erase with an I/O error, as the drives the H730P left NOT READY did, cannot take the markers. It is first erased by the controller without markers, which makes it usable again, and then erased once more with markers. `device_status.perc_erase.recovery` records this, and `commands` lists both erases.
 
 ## Library
 
@@ -236,6 +242,7 @@ Rule format, one per line: `model regex ; firmware regex ; minimum ; reference`.
 - **SAS drives:** SCSI SANITIZE is not implemented.
 - **HDDs:** cryptographic erase is not applicable to drives that do not encrypt; use overwrite.
 - **Drives behind PERC/MegaRAID without `--raid-reset`:** drives in a virtual disk, in state Ready or hot spares are listed (`UNHANDLED`), not erased. Use `--raid-reset`. RAID controllers other than PERC/MegaRAID are not supported.
+- **SAS drives and hard disks the controller cannot crypto-erase:** `UNHANDLED`; overwriting is out of scope.
 - **TCG Opal drives with a locked range, or ATA drives with a user password set:** these need a PSID revert or unlock first. They are reported `FAIL`.
 - **NVMe controllers with no namespace attached:** recreate the namespace layout first.
 - **Windows and macOS:** not supported.

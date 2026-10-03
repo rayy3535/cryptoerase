@@ -129,22 +129,35 @@ type scsiSpec struct {
 	usb                   bool
 	wwid                  string       // sysfs device/wwid, if set
 	ata                   *fakeATADisk // nil: IDENTIFY fails
+	host                  string       // SCSI host; default: one per disk
+	hctl                  string       // SCSI address; default "0:0:0:<name>"
+	vpd80                 string       // unit serial number (VPD page 0x80), if set
 }
 
 func (h *testHost) addSCSI(name string, s scsiSpec) {
 	if s.model == "" {
 		s.model = "MOCKMODEL"
 	}
-	host := "host" + strconv.Itoa(len(name)*7+int(name[len(name)-1]))
-	devpath := filepath.Join(h.sys, "devices/pci0000:00", host, "target0:0:0", "0:0:0:"+name)
+	host := s.host
+	if host == "" {
+		host = "host" + strconv.Itoa(len(name)*7+int(name[len(name)-1]))
+	}
+	addr := s.hctl
+	if addr == "" {
+		addr = "0:0:0:" + name
+	}
+	devpath := filepath.Join(h.sys, "devices/pci0000:00", host, "target0:0:0", addr)
 	if s.usb {
-		devpath = filepath.Join(h.sys, "devices/pci0000:00/usb1", host, "target0:0:0", "0:0:0:"+name)
+		devpath = filepath.Join(h.sys, "devices/pci0000:00/usb1", host, "target0:0:0", addr)
 	}
 	blk := filepath.Join(devpath, "block", name)
 	write(h.t, filepath.Join(devpath, "vendor"), fmt.Sprintf("%-8s\n", s.vendor))
 	write(h.t, filepath.Join(devpath, "model"), s.model+"\n")
 	if s.wwid != "" {
 		write(h.t, filepath.Join(devpath, "wwid"), s.wwid+"\n")
+	}
+	if s.vpd80 != "" {
+		write(h.t, filepath.Join(devpath, "vpd_pg80"), string(append([]byte{0, 0x80, 0, byte(len(s.vpd80))}, s.vpd80...)))
 	}
 	write(h.t, filepath.Join(blk, "queue/rotational"), strconv.Itoa(s.rotational))
 	write(h.t, filepath.Join(blk, "removable"), strconv.Itoa(s.removable))

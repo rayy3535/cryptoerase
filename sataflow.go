@@ -38,14 +38,22 @@ func (r *runner) scsiDrive(ctx context.Context, name string) *DriveRecord {
 	if r.inUse[name] {
 		return r.done(rec, Unhandled, "in use by the running OS")
 	}
-	if first, _, _ := strings.Cut(vendor, " "); first != "ATA" {
-		if driver == "megaraid_sas" || strings.Contains(model, "PERC") {
-			return r.percDisk(ctx, rec, driver)
-		}
-		return r.done(rec, Unhandled, fmt.Sprintf("not a directly attached ATA device (vendor=%q, model=%q, driver=%s); SAS or other controller, use controller tool", vendor, model, driver))
+	if r.isRAIDVirtualDisk(name, model, driver) {
+		return r.percDisk(ctx, rec, driver)
 	}
-	rec.Interface = "SATA"
-	if readTrim(filepath.Join(p, "queue", "rotational")) == "1" {
+	isATA := false
+	if first, _, _ := strings.Cut(vendor, " "); first == "ATA" {
+		isATA = true
+		rec.Interface = "SATA"
+	}
+	rotational := readTrim(filepath.Join(p, "queue", "rotational")) == "1"
+	switch {
+	case driver == "megaraid_sas" && (!isATA || rotational):
+		// A SAS drive or a SATA hard disk passed through by the controller.
+		return r.percPhysical(ctx, rec, name, driver, rotational)
+	case !isATA:
+		return r.done(rec, Unhandled, fmt.Sprintf("not a directly attached ATA device (vendor=%q, model=%q, driver=%s); SAS or other controller, use controller tool", vendor, model, driver))
+	case rotational:
 		rec.MediaType = "HDD"
 		return r.done(rec, Unhandled, "rotational HDD: outside crypto-erase scope, use overwrite")
 	}
@@ -113,9 +121,9 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 	// it can; ATA pass-through is the fallback (see percSATA).
 	ctrlNote := ""
 	if driver == "megaraid_sas" {
-		t, err := r.percEraseTarget(ctx, rec)
+		t, err := r.percEraseTarget(ctx, rec, name)
 		if err == nil {
-			return r.percSATA(ctx, rec, name, driver, sec, t)
+			return r.percErase(ctx, rec, name, driver, sec.Locked, t)
 		}
 		ctrlNote = "; erase through the controller not possible: " + err.Error()
 	}

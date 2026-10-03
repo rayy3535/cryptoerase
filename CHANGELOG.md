@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0 (2026-10-03)
+
+- **SAS drives behind a PERC.** Drives a PERC/MegaRAID controller passes through (JBOD, non-RAID) are told apart from virtual disks by the SCSI channel. megaraid_sas puts virtual disks on channel 2 and above. Before, every megaraid_sas disk whose vendor was not "ATA" was taken for a virtual disk. On a PowerEdge with two SAS hard disks (ST1200MM0099), `--raid-reset` exposed them, and the first then reused the name of the deleted virtual disk. The run reported "PERC virtual disk still present after the RAID reset deleted it" and "set to non-RAID but not visible to the OS".
+- SAS drives and SATA hard disks behind such a controller are crypto-erased by the controller if it reports them capable (ISE or SED). Otherwise they are `UNHANDLED`, as overwriting is out of scope.
+- Drives are matched to their controller slot by WWN, by serial number in the wwid or in VPD page 0x80 (SAS drives pad it), or, with a single megaraid_sas host, by the device ID that the driver encodes in the SCSI target. The same matching decides which drive record an exposed drive has.
+- **Drives that reject writes.** Such a drive is erased once by the controller without markers, which made the drives a PERC H730P had left NOT READY usable again, and then erased with markers and verified. Before, it failed with "cannot write markers before erase". `device_status.perc_erase.recovery` records this.
+
 ## v0.3.0 (2026-10-03)
 
 - SATA drives behind a PERC/MegaRAID controller are erased by the controller (`set good force`, `start erase crypto`, `set jbod`, result from the event log, markers verified) whenever the controller reports them "Cryptographic Erase Capable". Before, this was done only when ATA pass-through returned no registers. On a PERC H730P Mini (firmware 4.300.00-8366) pass-through SANITIZE was rejected with an I/O error while the drives completed it; the controller then reported them NOT READY and failed all reads. The controller erase worked on the same drives and made them usable again. hdparm is the fallback when the controller cannot erase a drive, and its failure reason says why.

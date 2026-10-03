@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -52,12 +54,16 @@ func (f *fakeRAID) SetGood(_ context.Context, c int, slot string) (string, error
 		must(f.h.t, err)
 		f.media[slot] = b
 		f.h.removeSCSI(name)
+		f.setState(slot, "UGood")
 		f.event("State change on "+pdName(f.drive(slot))+" from JBOD(40) to UNCONFIGURED_GOOD(0)", f.drive(slot).DID)
 	})
 }
 
 func (f *fakeRAID) StartCryptoErase(_ context.Context, c int, slot string) (string, error) {
 	return f.run(fmt.Sprintf("perccli64 %s start erase crypto", perc.Path(c, slot)), func() {
+		if f.onErase != nil {
+			f.onErase(slot)
+		}
 		d := f.drive(slot)
 		pd := pdName(d)
 		switch f.outcome[slot] {
@@ -122,10 +128,14 @@ func percHost(t *testing.T) (*testHost, *fakeRAID, *fakeATADisk) {
 		outcome: map[string]string{},
 	}
 	f.event("Controller requests a host bus rescan", nil)
+	names := []string{"sdc", "sdd"}
 	f.jbod = map[string]func(){"68:0": func() {
-		h.addSCSI("sdc", scsiSpec{vendor: "ATA", model: "SAMSUNG MZ7LH960", driver: "megaraid_sas", wwid: "naa.5002538e00000001",
+		name := names[0]
+		names = names[1:]
+		h.addSCSI(name, scsiSpec{vendor: "ATA", model: "SAMSUNG MZ7LH960", driver: "megaraid_sas", wwid: "naa.5002538e00000001",
 			ata: &fakeATADisk{words: words, behaviour: "noregs"}})
-		must(t, os.WriteFile(filepath.Join(h.dev, "sdc"), f.media["68:0"], 0o644))
+		must(t, os.WriteFile(filepath.Join(h.dev, name), f.media["68:0"], 0o644))
+		f.good["68:0"] = name
 	}}
 	return h, f, d
 }
@@ -214,7 +224,7 @@ func TestPERCEraseFailures(t *testing.T) {
 		}, "not erased; setting the drive back to non-RAID also failed: Failure B", 3},
 		{"never comes back", func(f *fakeRAID) { f.jbod["68:0"] = nil }, "did not come back to the OS within 20ms", 3},
 		{"event log unreadable", func(f *fakeRAID) { f.eventsErr = errors.New("perccli64 crashed") }, "cannot read the controller event log, which holds the erase result: perccli64 crashed; drive not modified", 0},
-		{"unknown serial", func(f *fakeRAID) { f.ctrls[0].Drives[0].Serial, f.ctrls[0].Drives[0].WWN = "OTHER", "" }, `; erase through the controller not possible: serial "EXAMPLESATA0001" not found among the controller's drives`, 0},
+		{"unknown serial", func(f *fakeRAID) { f.ctrls[0].Drives[0].Serial, f.ctrls[0].Drives[0].WWN = "OTHER", "" }, `; erase through the controller not possible: serial "EXAMPLESATA0001" (and sda) not found among the controller's drives`, 0},
 		{"two matches", func(f *fakeRAID) { f.ctrls[0].Drives = append(f.ctrls[0].Drives, f.ctrls[0].Drives[0]) }, "matches 2 controller drives", 0},
 		{"not crypto capable", func(f *fakeRAID) { f.ctrls[0].Drives[0].CryptoErase = false }, "does not report drive /c0/e68/s0 as cryptographic-erase capable", 0},
 		{"not JBOD", func(f *fakeRAID) { f.ctrls[0].Drives[0].State = "UGood" }, `is in state "UGood", not JBOD`, 0},
@@ -376,4 +386,74 @@ func TestPERCEraseFallbackToHdparm(t *testing.T) {
 	if !slices.Contains(d.calls, "crypto-scramble") {
 		t.Fatalf("hdparm not used: %v", d.calls)
 	}
+}
+
+// stuckDev fails every write with EIO, like a drive a PERC H730P reports
+// NOT READY.
+type stuckDev struct {
+	blockdev.Device
+	path string
+}
+
+func (d stuckDev) WriteAt([]byte, int64) (int, error) {
+	return 0, &os.PathError{Op: "write", Path: d.path, Err: syscall.EIO}
+}
+
+// stuckOptions makes writes fail while stuck is set.
+func stuckOptions(o Options, stuck *atomic.Bool) Options {
+	o.OpenBlock = func(p string, direct, write bool) (blockdev.Device, error) {
+		if !write {
+			return blockdev.OpenReadOnly(p, direct)
+		}
+		d, err := blockdev.Open(p, direct)
+		if err != nil || !stuck.Load() {
+			return d, err
+		}
+		return stuckDev{d, p}, nil
+	}
+	return o
+}
+
+// A drive that rejects writes is erased once by the controller to make it
+// usable, then erased again with markers.
+func TestPERCEraseRecoversStuckDrive(t *testing.T) {
+	h, f, _ := percHost(t)
+	var stuck atomic.Bool
+	stuck.Store(true)
+	f.onErase = func(string) { stuck.Store(false) }
+	rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
+	r := wantResult(t, rep, "sda", Pass, "")
+	pe := r.DeviceStatus.PERCErase
+	want := strings.Join(append(slices.Clone(percCommands), percCommands...), "|")
+	if strings.Join(f.calls, "|") != want || strings.Join(pe.Commands, "|") != want {
+		t.Fatalf("calls %v, recorded %v", f.calls, pe.Commands)
+	}
+	if !strings.Contains(pe.Recovery, "input/output error") || !strings.Contains(pe.Recovery, `a first controller erase ("Erase completed on PD 26(e0x44/s0)") made it writable again`) ||
+		pe.Outcome != "completed" || filepath.Base(pe.ReattachedAs) != "sdd" {
+		t.Fatalf("%+v", pe)
+	}
+	if r.Verification.Changed != r.Verification.Samples {
+		t.Fatalf("verification %+v", r.Verification)
+	}
+}
+
+func TestPERCEraseRecoveryFails(t *testing.T) {
+	t.Run("still rejects writes", func(t *testing.T) {
+		h, f, _ := percHost(t)
+		var stuck atomic.Bool
+		stuck.Store(true)
+		rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
+		wantResult(t, rep, "sda", Fail, "cannot write markers before erase")
+		if len(f.calls) != 3 {
+			t.Fatalf("calls %v", f.calls)
+		}
+	})
+	t.Run("recovery erase fails", func(t *testing.T) {
+		h, f, _ := percHost(t)
+		var stuck atomic.Bool
+		stuck.Store(true)
+		f.outcome["68:0"] = "failed"
+		rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
+		wantResult(t, rep, "sda", Fail, "and a controller erase to make it usable again failed: controller event log: Erase failed on PD 26(e0x44/s0) (Error 02); treat the drive as not erased")
+	})
 }
