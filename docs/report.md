@@ -46,7 +46,7 @@
 
 - **NVMe Sanitize:** the Sanitize Status log fields `sstat`, `sprog`, `global_data_erased`, and `estimated_crypto_erase_s`.
 - **NVMe Format:** `format`, one entry per namespace with the NSID, LBA format and CDW10 issued.
-- **SATA:** `ata_sanitize_status`; or, for a drive erased by its PERC/MegaRAID controller, `perc_erase`: `controller`, `slot`, `did`, `tool`, the `commands` run (planned in inventory mode), the `outcome` (`completed`, `failed` or `aborted`) and the controller log `event` it was read from, `reattached_as` when the disk came back under another name, and `recovery` when the drive rejected writes and was erased once without markers to make it usable before the verified erase.
+- **SATA:** `ata_sanitize_status`; or, for a drive erased by its PERC/MegaRAID controller, `perc_erase`: `controller`, `slot`, `did`, `tool`, the `commands` run (planned in inventory mode), the `outcome` (`completed`, `failed` or `aborted`) and the controller log `event` it was read from, `reattached_as` when the disk came back under another name, and `recovery` when the drive rejected writes until a SANITIZE STATUS EXT was sent to it.
 - **All NVMe:** `rescan_error`, set if the namespace rescan after the erase failed.
 
 ## Mapping to NIST SP 800-88r2 §4.6

@@ -114,8 +114,9 @@ func (r *runner) percErase(ctx context.Context, rec *DriveRecord, name, driver s
 	m, err := r.writeMarkers(r.devPath(name))
 	if err != nil && errors.Is(err, syscall.EIO) && rec.Interface == "SATA" {
 		// A PERC H730P that passed a SANITIZE through to a SATA drive
-		// reports the drive NOT READY and fails every read and write, until
-		// it sees a SANITIZE STATUS EXT (read-only) report the sanitize over.
+		// reported the drive NOT READY and failed its reads and writes. One
+		// such drive worked again after a SANITIZE STATUS EXT (read-only),
+		// so ask once and retry.
 		if st, serr := r.opts.ATA.SanitizeStatus(ctx, r.devPath(name)); serr == nil && !st.InProgress {
 			r.log.Warn("drive rejected writes; retrying after SANITIZE STATUS", "device", r.devPath(name), "state", st.State, "error", err)
 			if sleep(ctx, percStatusSettle) == nil {
@@ -126,19 +127,15 @@ func (r *runner) percErase(ctx context.Context, rec *DriveRecord, name, driver s
 			}
 		}
 	}
-	if err != nil && errors.Is(err, syscall.EIO) {
-		// Still rejected: erase once through the controller to make the
-		// drive usable, then erase again with markers.
-		again, rerr := r.percRecover(ctx, pe, pr, name, host, d, err)
-		if rerr != nil {
-			return r.done(rec, Fail, fmt.Sprintf("the drive rejects writes (%v), and a controller erase to make it usable again failed: %v; treat the drive as not erased", err, rerr))
-		}
-		name = again
-		m, err = r.writeMarkers(r.devPath(name))
-	}
 	if err != nil {
 		if errors.Is(err, errMarkerReadback) {
 			return r.done(rec, Fail, fmt.Sprintf("marker read-back mismatch before erase: %v", err))
+		}
+		if errors.Is(err, syscall.EIO) {
+			// Not erased through the controller: on a PERC H730P a crypto
+			// erase of such a drive failed (Error f0) and the controller then
+			// marked it Unconfigured Bad.
+			return r.done(rec, Fail, fmt.Sprintf("the drive rejects writes, so no markers could be written: %v. Not erased; the controller was not asked to erase it, since that failed for such drives and left them Unconfigured Bad. Power-cycle the server, set any drive in state UBad good (%s %s set good force), and rerun", err, t.c.Tool, perc.Path(t.c.Index, t.d.Slot)))
 		}
 		return r.done(rec, Fail, fmt.Sprintf("cannot write markers before erase (locked or read-only?): %v", err))
 	}
@@ -176,31 +173,6 @@ func (r *runner) percErase(ctx context.Context, rec *DriveRecord, name, driver s
 	rec.Verification = r.verification(v)
 	res, reason := verifiedResult(v)
 	return r.done(rec, res, reason)
-}
-
-// percRecover erases a drive that rejects writes through the controller,
-// without markers, and returns the block device it comes back as. pr keeps
-// the commands; Recovery records what happened.
-func (r *runner) percRecover(ctx context.Context, pe PERCEraser, pr *PERCErase, name, host string, d perc.Drive, cause error) (string, error) {
-	r.log.Warn("drive rejects writes; erasing it through the controller first", "device", r.devPath(name), "error", cause)
-	r.percMu.Lock()
-	jbodErr, eraseErr := r.percCryptoErase(ctx, pe, pr, name, host, d.Slot, nil)
-	r.percMu.Unlock()
-	switch {
-	case eraseErr != nil:
-		return "", eraseErr
-	case pr.Outcome != "completed":
-		return "", errors.New("controller event log: " + pr.Event.Description)
-	case jbodErr != nil:
-		return "", fmt.Errorf("setting the drive back to non-RAID failed: %w", jbodErr)
-	}
-	again := r.waitPERCDrive(ctx, d, host)
-	if again == "" {
-		return "", fmt.Errorf("the drive did not come back to the OS within %s", r.opts.RAIDWait)
-	}
-	pr.Recovery = fmt.Sprintf("the drive rejected writes (%v); a first controller erase (%q) made it writable again, then it was erased with markers", cause, pr.Event.Description)
-	pr.Outcome, pr.Event = "", nil
-	return again, nil
 }
 
 // percDriveFor finds the controller drive behind block device name: by the

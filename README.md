@@ -184,7 +184,7 @@ The drive passes only with `Erase completed` in the event log and every marker c
 
 If the controller cannot erase a SATA SSD, the tool falls back to SANITIZE through hdparm, and a failure there also states why the controller was not used. The controller cannot erase a drive that does not match exactly one controller drive, is not JBOD, or is not reported as crypto-erase capable.
 
-A drive that rejects writes before the erase with an I/O error, as the drives the H730P left NOT READY did, cannot take the markers. It is first erased by the controller without markers, which makes it usable again, and then erased once more with markers. `device_status.perc_erase.recovery` records this, and `commands` lists both erases.
+A drive that rejects writes before the erase with an I/O error cannot take the markers. The drives the H730P blocked after a pass-through SANITIZE behaved this way. For such a SATA drive the tool sends one SANITIZE STATUS EXT (read-only) and retries, since one blocked drive worked again after that; `device_status.perc_erase.recovery` records it. If writes are still rejected, the drive is reported `FAIL`, and the controller is not asked to erase it. On the H730P that erase failed (`Error f0`) and the controller marked the drives Unconfigured Bad. Power-cycle the server, set such drives good (`perccli64 /cN/eE/sS set good force`) and rerun.
 
 ## Library
 
