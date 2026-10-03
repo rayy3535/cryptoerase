@@ -12,280 +12,124 @@
   <a href="https://pkg.go.dev/github.com/rayy3535/cryptoerase"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/rayy3535/cryptoerase.svg"></a>
 </p>
 
-Cryptographic erase for the NVMe and SATA SSDs in a Linux server, with a JSON evidence report per run. Useful wherever servers pass from one user to the next (bare-metal hosting, hardware refresh and resale, lab fleets) and you need to show, drive by drive, how the previous data was destroyed.
+Cryptographic erase for the drives in a Linux server, with a JSON evidence report per run. It handles NVMe drives, SATA SSDs, and SATA or SAS drives (SSD or HDD) behind a Dell PERC / Broadcom MegaRAID controller. It is meant for wherever servers pass from one user to the next (bare-metal hosting, hardware refresh and resale, lab fleets) and you need to show, drive by drive, how the previous data was destroyed.
 
 It is a Go library (`github.com/rayy3535/cryptoerase`) with a small command-line tool (`cmd/cryptoerase`).
 
 > [!WARNING]
-> **This tool destroys all data on the drives it erases.** It is pre-release software. It has been tested against simulated devices only. Run `--inventory` and a test erase on spare hardware of every drive model you use before putting it into production.
+> **This tool destroys all data on the drives it erases.** It has passed on the servers listed in [docs/tested-hardware.md](docs/tested-hardware.md). Before using it in production, run `--inventory` and a test erase on spare hardware for every drive model and controller you use.
 
 ## What it does
 
-| Drive | Erase command | Requires |
-|---|---|---|
-| NVMe | Sanitize, Crypto Erase action (SANACT=100b) | SANICAP bit 0 |
-| NVMe, only with `--allow-format` | Format NVM, Secure Erase Setting 010b (Cryptographic Erase), keeping the current LBA format, metadata and protection information | FNA bit 2, and no unallocated NVM capacity |
-| SATA SSD | ATA SANITIZE CRYPTO SCRAMBLE EXT | IDENTIFY word 59 bits 12 and 13 |
+| Drive | Erase |
+|---|---|
+| NVMe | Sanitize, Crypto Erase. Format NVM with Cryptographic Erase only with `--allow-format` |
+| SATA SSD, directly attached | ATA SANITIZE CRYPTO SCRAMBLE |
+| SATA or SAS, SSD or HDD, behind a Dell PERC / Broadcom MegaRAID | The controller's cryptographic erase, for drives it reports "Cryptographic Erase Capable" (ISE or SED). With `--raid-reset`, virtual disks are deleted first and their drives erased one by one |
 
-Design rules:
+- **Cryptographic erase only, fail closed.** There is no fallback to block erase, overwrite or zero-fill. A drive without a cryptographic erase method is reported `FAIL` or `UNHANDLED`.
+- **Nothing is skipped silently.** Drives the tool cannot erase are reported `UNHANDLED` with the reason:
+  - RAID virtual disks without `--raid-reset`;
+  - drives behind the controller that the OS cannot see;
+  - HDDs and SAS drives without a controller crypto erase;
+  - disks the running OS uses, and exclusions.
+- **Two checks per drive.** The device's or controller's completion status, plus 16 random markers written before the erase that must all read back changed afterwards.
+- **Evidence.** One JSON record per drive: identity, capabilities, the exact commands, the reported status, and the marker check. The fields follow NIST SP 800-88r2 §4.6.
+- **Firmware floor.** Drive models with erase-related advisories must run fixed firmware.
 
-- **Cryptographic erase only, fail closed.** There is no fallback to block erase, overwrite, ATA Security Erase or zero-fill. A drive that cannot be cryptographically erased is reported `FAIL`.
-- **Nothing is skipped silently.** Drives the host cannot address directly are reported `UNHANDLED` with the reason: RAID virtual disks, SAS drives, HDDs, disks used by the running OS, and drives excluded by the operator. Removable media and empty slots are reported `SKIPPED`.
-- **Firmware floor.** Drive models with published erase-related advisories must run fixed firmware. Older firmware is reported `FAIL`. See [Firmware floor](#firmware-floor).
-- **Evidence.** Each drive gets a record of identity, capabilities, the exact command, the status the device reported, and an independent read-back check. The fields follow NIST SP 800-88r2 §4.6. See [docs/report.md](docs/report.md).
-- **Concurrency.** Drives are processed in parallel. `--parallel` sets an upper bound.
-
-### Verification
-
-Two independent checks must both pass:
-
-1. **The device's own completion status.**
-   - NVMe Sanitize: the Sanitize Status log page, with SSTAT reporting success. The Global Data Erased bit is recorded.
-   - NVMe Format: successful command completion.
-   - ATA: SANITIZE STATUS EXT reporting "completed without error".
-2. **Markers.** Before the erase, 16 random 1 MiB blocks are written with O_DIRECT at evenly spaced offsets of every namespace or disk, and each is read back to confirm it landed. After the erase, every one of them must read back different. This catches firmware that reports success without changing the data.
-
-NIST SP 800-88r2 §4.5.1 asks for completion status, errors and device health, and says elaborate sampling is not necessary after a clear or purge. The markers are cheap extra evidence on top of that, not a replacement for it.
-
-### How it talks to the drives
-
-- **NVMe:** native `NVME_IOCTL_ADMIN_CMD` passthrough on the controller character device (`/dev/nvmeN`). Every command and status code is under the tool's control, and nvme-cli is not needed.
-  - Commands used: Identify, Get Log Page (SMART, Sanitize Status), Sanitize, Format NVM, and Security Receive for TCG Level 0 Discovery.
-  - TCG Level 0 Discovery records whether the drive reports media encryption and whether a locking range is locked.
-- **SATA:** through [hdparm](https://sourceforge.net/projects/hdparm/) (9.56 or later), behind the `ata.Backend` interface. hdparm handles SCSI/ATA Translation and sense-data formats across kernels and HBAs. A native SG_IO backend can be added behind the same interface.
-- **Dell PERC / Broadcom MegaRAID:** the OS sees only virtual disks. If `perccli64`, `perccli`, `storcli64` or `storcli` is installed, the record for each virtual disk lists the physical drives behind it, including whether each is a SED. With `--raid-reset` the tool removes the RAID configuration and erases each drive directly; see [RAID controllers](#raid-controllers).
+How each of these works, including the RAID reset and the controller erase: [docs/how-it-works.md](docs/how-it-works.md).
 
 ## Requirements
 
-- Linux, amd64 or arm64, running as root (admin passthrough needs `CAP_SYS_ADMIN`).
-- `hdparm` 9.56 or later if SATA drives are present.
-- `perccli64` or `storcli64` if a PERC/MegaRAID controller is present, or with `--raid-reset`. Found in `$PATH` or `/opt/MegaRAID/{perccli,storcli}`, or set with `--raid-cli`.
+- Linux, amd64 or arm64, as root.
+- `hdparm` 9.56 or later, if SATA drives are present.
+- `perccli64` or `storcli64`, if a PERC/MegaRAID controller is present. It is searched in `$PATH` and `/opt/MegaRAID`, or set with `--raid-cli`.
 
-Before anything is written, the tool checks that what this host needs is there: hdparm when SATA drives are present, the controller CLI when a PERC/MegaRAID controller is present or `--raid-reset` is given. Excluded, in-use, removable and USB disks do not count. If a tool is missing, it exits with code 1, naming the tool and the disk that needs it, and writes no report.
-
-The binary is static (`CGO_ENABLED=0`) and has no other runtime dependencies. It is meant to run from a minimal maintenance OS, for example a PXE-booted environment used between deployments.
+If a needed tool is missing, the tool exits with code 1 before writing anything. The binary is static, with no other dependencies, and is meant to run from a minimal maintenance OS such as a PXE-booted environment.
 
 ## Install
 
-Release binaries are static and built by GitHub Actions from the tagged commit, with [SLSA build provenance](https://slsa.dev/spec/v1.0/provenance). Download `cryptoerase-linux-amd64` or `-arm64` and `SHA256SUMS` from the [releases page](https://github.com/rayy3535/cryptoerase/releases), then check them before copying the binary into your maintenance image:
+Release binaries are built by GitHub Actions from the tagged commit, with [SLSA build provenance](https://slsa.dev/spec/v1.0/provenance):
 
 ```sh
+wget https://github.com/rayy3535/cryptoerase/releases/latest/download/cryptoerase-linux-amd64
+wget https://github.com/rayy3535/cryptoerase/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-gh attestation verify cryptoerase-linux-amd64 --repo rayy3535/cryptoerase
+gh attestation verify cryptoerase-linux-amd64 --repo rayy3535/cryptoerase   # optional
 ```
 
-From source (Go 1.27.1 or later):
-
-```sh
-go install github.com/rayy3535/cryptoerase/cmd/cryptoerase@latest
-# or, in a checkout
-make build        # bin/cryptoerase, static
-make release      # dist/cryptoerase-linux-{amd64,arm64} + SHA256SUMS
-```
-
-`cryptoerase --version` prints the version, the commit it was built from, and the Go version.
+From source (Go 1.27.1 or later): `go install github.com/rayy3535/cryptoerase/cmd/cryptoerase@latest`.
 
 ## Usage
 
 ```sh
-# Detect drives and plan the erase. Writes nothing.
-cryptoerase --inventory
-
-# Erase.
-cryptoerase --yes --job-id RECLAIM-1234 --report /var/tmp/erase.json
+cryptoerase --inventory                  # detect drives and plan; writes nothing
+cryptoerase --yes --job-id RECLAIM-1234  # erase
+cryptoerase --yes --raid-reset           # also delete RAID virtual disks and erase their drives
 ```
 
 | Flag | Meaning |
 |---|---|
-| `--inventory` | Detect and plan only. Cannot be combined with `--yes` |
+| `--inventory` | Detect and plan only |
 | `--yes` | Required to erase |
+| `--raid-reset` | PERC/MegaRAID: delete the virtual disks the running OS does not use, set their drives and any drives in state Ready to non-RAID, then erase each drive |
+| `--allow-format` | NVMe: accept Format NVM with Cryptographic Erase on controllers without Sanitize Crypto Erase. Format covers less than Sanitize; see [docs/background.md](docs/background.md) |
+| `--exclude DEV` | Never touch `DEV` (`sda`, `/dev/sda`, `nvme0`). Repeatable |
 | `--report FILE` | Report path. Default `./cryptoerase-<serial>-<UTC>.json` |
 | `--job-id ID` | Copied into the report |
-| `--allow-format` | Accept NVMe Format NVM SES=010b on controllers without Sanitize Crypto Erase (typically NVMe 1.2 drives). Off by default, because Format covers less than Sanitize; see [docs/background.md](docs/background.md) |
-| `--raid-reset` | PERC/MegaRAID: delete the virtual disks the running OS does not use, set their drives to non-RAID, then erase each drive directly. With `--inventory`, only the plan is reported. See [RAID controllers](#raid-controllers) |
-| `--exclude DEV` | Never touch `DEV` (`sda`, `/dev/sda`, `nvme0`). Repeatable. Reported `UNHANDLED` |
-| `--fw-policy FILE` | Replace the built-in firmware floor table |
 | `--parallel N` | Process at most N drives at once. Default 0 = all |
 | `--samples N` | Markers per namespace or disk. Default 16 |
+| `--fw-policy FILE` | Replace the built-in firmware floor table |
+| `--hdparm PATH`, `--raid-cli PATH` | Tool binaries |
 | `--poll-interval`, `--no-progress-timeout`, `--format-timeout` | Sanitize polling and timeouts |
-| `--hdparm PATH` | hdparm binary |
-| `--raid-cli PATH` | PERC/MegaRAID CLI (`perccli64` or `storcli64`). Default: search `$PATH`, then `/opt/MegaRAID/perccli` and `/opt/MegaRAID/storcli` |
 | `--log-format text\|json` | stderr log format |
 | `--version` | Print version, commit and Go version |
 
-Exit codes:
-
-| Code | Meaning |
+| Exit code | Meaning |
 |---|---|
-| 0 | Every in-scope drive was erased and verified. In inventory mode: every in-scope drive has a method |
-| 1 | At least one drive `FAIL`ed, no drive was found, bad arguments, or a required tool is missing |
-| 2 | No failures, but some drives are `UNHANDLED` and need another method before the server is released |
-
-A typical reclamation hook:
+| 0 | Every in-scope drive was erased and verified (inventory: every drive has a method) |
+| 1 | A drive `FAIL`ed, no drive was found, bad arguments, or a required tool is missing |
+| 2 | No failures, but some drives are `UNHANDLED` and need another method |
 
 ```sh
-cryptoerase --yes --job-id "$JOB" --report "/tmp/erase-$JOB.json"
+cryptoerase --yes --raid-reset --job-id "$JOB" --report "/tmp/erase-$JOB.json"
 case $? in
   0) release_server ;;
-  2) handle_unhandled_drives_then_review ;;   # e.g. RAID virtual disks via the controller
+  2) review_unhandled_drives ;;
   *) quarantine_server ;;
 esac
-upload "/tmp/erase-$JOB.json"
 ```
 
-## RAID controllers
+The report format is described in [docs/report.md](docs/report.md), with examples in [examples/](examples/).
 
-On a Dell PERC or Broadcom MegaRAID controller in RAID mode, the OS sees virtual disks, not drives, so nothing behind them can be crypto-erased directly. `--raid-reset` removes that layer first:
+## Not covered
 
-1. **Read the configuration** with `perccli64` (or `perccli`, `storcli64`, `storcli`): virtual disks, the drives behind them, hot spares, serial numbers and WWNs.
-2. **Decide, without changing anything.** A virtual disk that backs a disk the running OS uses (mounted, swap, through LVM) is kept, with its drives. The whole controller is left unchanged if:
-   - it carries a foreign configuration;
-   - any drive is in a state other than online, unconfigured good, JBOD or hot spare (failed, rebuilding, ...);
-   - the OS uses a disk on such a controller, and a virtual disk cannot be matched to its block device (by the CLI's "OS Drive Name" or the SCSI NAA identifier).
-3. **Apply,** in erase mode only:
-   - remove hot spares (`delete hotsparedrive`);
-   - delete the other virtual disks (`/cN/vM delete force`);
-   - set their drives to non-RAID (`set jbod`).
-4. **Wait** up to 60 s for each drive to appear as a block device, matched by WWN or serial number.
-5. **Erase** each drive like any directly attached drive: markers, Sanitize Crypto Erase / SANITIZE CRYPTO SCRAMBLE, verification. Each drive record names its controller slot (`attach.raid_slot`).
-
-Every command run (or, with `--inventory`, planned) is in the report under `raid_reset`. A drive that was to be exposed but never reached the OS is reported `FAIL`, so its data cannot be left behind unnoticed. Drives stay non-RAID afterwards.
-
-Drives the OS cannot see at all, such as drives in state Ready (UGood, "Ready" in iDRAC) and hot spares, are listed from the controller and get a record of their own, named by their slot (`/c0/e68/s0`). They are reported as follows:
-- with `--raid-reset`, they are set to non-RAID and erased (`PLANNED` with `--inventory`);
-- without `--raid-reset`, they are `UNHANDLED`, so the run cannot pass while they still hold data.
-
-For this, a PERC/MegaRAID CLI is required whenever such a controller is present, even if no disk on it is visible.
-
-Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the controller and firmware; if IDENTIFY does not get through, the drive is reported `UNHANDLED` as usual.
-
-### Drives the controller erases
-
-The OS sees a PERC/MegaRAID virtual disk on SCSI channel 2 or above (`0:2:0:0`), with the controller as its model. A drive the controller passes through (JBOD, non-RAID) is on channel 0 or 1 with its own vendor and model, and its SCSI target is its controller device ID (DID). A drive is matched to its controller slot by WWN, by serial number (in the wwid or VPD page 0x80), or, when there is a single megaraid_sas host, by that DID.
-
-**SAS drives and SATA hard disks** behind the controller cannot be sanitized through hdparm. They are erased by the controller if it reports them "Cryptographic Erase Capable" (ISE or SED); otherwise they are `UNHANDLED`, since overwriting is outside this tool's scope.
-
-**SATA SSDs:** behind a PERC/MegaRAID controller (`megaraid_sas`), ATA pass-through is not a dependable way to sanitize a non-RAID SATA drive. Two PERCs each failed it in a different way:
-- **PERC H355:** forwards ATA commands but returns none of the drive's registers (fixed-format sense, every register field zero; hdparm reports `bad/missing sense data`), so the outcome of a sanitize cannot be read.
-- **PERC H730P:** rejects SANITIZE with an I/O error. The drive nevertheless completes the sanitize, and the controller then reports it NOT READY (`Unexpected sense ... 2/05/00` in its event log) and fails every read and write until the drive is reset.
-
-So a SATA drive behind such a controller is erased by the controller whenever the controller reports it "Cryptographic Erase Capable" (ISE or SED drives):
-
-1. Write the markers through the OS.
-2. Remove the disk from the kernel (`/sys/block/sdX/device/delete`). The controller hides the drive in the next step, and reads of the stale disk would fail with I/O errors in the kernel log. The markers' write handle is closed only after the removal: closing it makes udev re-read the partition table, and that read would race with the removal.
-3. `set good force`: the drive becomes unconfigured good, which the controller requires for an erase.
-4. `start erase crypto`.
-5. Wait for the result in the controller event log (`show events`): `Erase completed on PD 26(e0x44/s0)` or `Erase failed ...`. All events since the erase started are read, however many other events (such as "Unexpected sense") are logged in between. `show erase` cannot tell: it reads `Not in progress` both before and after an erase that takes no time.
-6. `set jbod`. This happens after a failed erase too, so the drive is left non-RAID as it was found.
-7. Wait for the disk to come back, matched by WWN or serial; its name may change.
-8. Verify the markers.
-
-The drive passes only with `Erase completed` in the event log and every marker changed. The commands, the event and the new device name are in the report under `device_status.perc_erase`. In `--inventory` the drive is `PLANNED` with method `perc-crypto-erase`.
-
-If the controller cannot erase a SATA SSD, the tool falls back to SANITIZE through hdparm, and a failure there also states why the controller was not used. The controller cannot erase a drive that does not match exactly one controller drive, is not JBOD, or is not reported as crypto-erase capable.
-
-A drive that rejects writes before the erase with an I/O error cannot take the markers. The drives the H730P blocked after a pass-through SANITIZE behaved this way. For such a SATA drive the tool sends one SANITIZE STATUS EXT (read-only) and retries, since one blocked drive worked again after that; `device_status.perc_erase.recovery` records it. If writes are still rejected, the drive is reported `FAIL`, and the controller is not asked to erase it. On the H730P that erase failed (`Error f0`) and the controller marked the drives Unconfigured Bad. Power-cycle the server, set such drives good (`perccli64 /cN/eE/sS set good force`) and rerun.
+- **Drives without a cryptographic erase:** HDDs and SAS drives that are not behind a PERC/MegaRAID controller, or that the controller does not report crypto-erase capable. Overwriting is out of scope.
+- **RAID controllers other than PERC/MegaRAID.**
+- **Locked drives:** TCG Opal drives with a locked range, and ATA drives with a user password. They need a PSID revert or unlock first.
+- **NVMe controllers with no namespace attached:** recreate the namespace layout first.
+- **Windows and macOS.**
 
 ## Library
 
 ```go
-rep, err := cryptoerase.Run(ctx, cryptoerase.Options{
-	Mode:        cryptoerase.ModeErase,
-	Confirm:     true,
-	AllowFormat: false,
-	Parallel:    4,
-	JobID:       "RECLAIM-1234",
-})
+rep, err := cryptoerase.Run(ctx, cryptoerase.Options{Mode: cryptoerase.ModeErase, Confirm: true, RAIDReset: true})
 if err != nil {
 	return err // the run could not start; per-drive problems are in rep
-}
-for _, d := range rep.Drives {
-	fmt.Println(d.Device, d.Model, d.Serial, d.Result, d.Reason)
 }
 os.Exit(rep.ExitCode())
 ```
 
-Every backend in `Options` can be replaced:
+Every backend can be replaced, and the subpackages (`nvme`, `ata`, `tcg`, `blockdev`, `perc`) are usable on their own; see [docs/library.md](docs/library.md).
 
-| Option | Default |
-|---|---|
-| `OpenNVMe` | `nvme.OpenController` |
-| `ATA` | `*ata.Hdparm` |
-| `PERC` | `*perc.Lister` |
-| `OpenBlock` | `blockdev.Open` |
+## Documentation
 
-The sysfs, procfs and /dev roots are also configurable. The tests use this to simulate whole servers.
-
-Subpackages are usable on their own:
-
-| Package | Contents |
-|---|---|
-| `nvme` | Admin passthrough, Identify / log page decoding, Sanitize and Format encoding, status codes |
-| `ata` | IDENTIFY DEVICE decoding, SANITIZE status, hdparm backend |
-| `tcg` | TCG Storage Level 0 Discovery decoding |
-| `blockdev` | Aligned O_DIRECT I/O |
-| `perc` | perccli / storcli JSON |
-
-## Firmware floor
-
-Built-in rules (`DefaultFirmwarePolicyText`):
-
-| Model | Firmware line | Minimum | Reference |
-|---|---|---|---|
-| Intel / Solidigm DC P4510, P4610 | Dell (`VDV1DP*`) | VDV1DP25 | Dell DSA-2022-203 |
-| Intel / Solidigm DC P4510, P4610 | Intel (`VDV10*`) | VDV10184 | INTEL-SA-00535, SOLIDIGM-SA-00563 |
-
-Rule format, one per line: `model regex ; firmware regex ; minimum ; reference`. Versions are compared like `sort -V`. Pull requests that add rules should cite a public advisory.
-
-## Not covered
-
-- **SAS drives:** SCSI SANITIZE is not implemented.
-- **HDDs:** cryptographic erase is not applicable to drives that do not encrypt; use overwrite.
-- **Drives behind PERC/MegaRAID without `--raid-reset`:** drives in a virtual disk, in state Ready or hot spares are listed (`UNHANDLED`), not erased. Use `--raid-reset`. RAID controllers other than PERC/MegaRAID are not supported.
-- **SAS drives and hard disks the controller cannot crypto-erase:** `UNHANDLED`; overwriting is out of scope.
-- **TCG Opal drives with a locked range, or ATA drives with a user password set:** these need a PSID revert or unlock first. They are reported `FAIL`.
-- **NVMe controllers with no namespace attached:** recreate the namespace layout first.
-- **Windows and macOS:** not supported.
-
-## Development
-
-Requires Go 1.27.1 or later.
-
-```sh
-make              # lint (gofmt, go mod tidy, vet, golangci-lint, actionlint), tests with -race, static build
-make cover        # coverage profile; fails below 90%
-make fuzz         # fuzz every parser for FUZZTIME (default 30s) each
-make vulncheck    # govulncheck
-make integration  # needs root: real kernel tests on a loop device, read-only NVMe identify
-make examples     # regenerate examples/*.json after an intended report change
-```
-
-The tests come in four layers:
-
-- **Scenario tests** build a fake sysfs tree, use sparse files as drives, and swap in fake NVMe, ATA and RAID backends to run whole servers through `Run`. They cover: honest erase; firmware that reports success but keeps the data; failed, stalled, rejected and interrupted sanitize; unreadable device status; format-only NVMe 1.2 controllers; the firmware floor; unallocated NVM capacity; RAID virtual disks, and the RAID reset (planning, in-use virtual disks, foreign and failed drives, hot spares, failed commands, drives that never appear); HDD, USB, removable, virtual and in-use disks (including through LVM, swap and a root filesystem shown as `/dev/root`); native NVMe multipath naming; TCG locking; marker write, read-back and verification faults; cancellation; the `--parallel` bound.
-- **Unit tests** per package, including the exact bytes of every NVMe admin command handed to the kernel (through an injectable ioctl), and the polling loops on a fake clock (`testing/synctest`) with the production timeouts.
-- **Fuzz tests** for every parser of device or tool output (NVMe Identify and log pages, ATA IDENTIFY and hdparm output, TCG Level 0 Discovery, perccli/storcli JSON, firmware policy and version ordering).
-- **Integration tests** (`-tags integration`) against the running kernel: O_DIRECT and block ioctls on a loop device, markers, an inventory of the host, and Identify on any NVMe controller present. They never write to a real drive.
-
-The example reports in `examples/` are golden files: the tests fail if the code would produce something different.
-
-CI runs all of this on linux/amd64 and linux/arm64 for every push and pull request, plus a nightly long fuzz run, CodeQL and OpenSSF Scorecard. The integration job also runs `cryptoerase --inventory` on the runner and shows the report in the job summary; CI never runs an erase.
-
-### Releasing
-
-1. In a pull request, set `Version` in `options.go` to the new version and add a `## vX.Y.Z (YYYY-MM-DD)` section at the top of `CHANGELOG.md`. A version with a `-` (`1.2.0-rc.1`) is published as a pre-release.
-2. Merge it. The release workflow sees a version on `main` that has no tag yet, checks that the version and the changelog agree, runs lint and tests, builds both binaries, attests their provenance, and creates the tag `vX.Y.Z` and the GitHub release with the changelog section as notes.
-
-Pushing a tag `vX.Y.Z`, or publishing a release with a new tag in the web UI, runs the same workflow.
-
-## Background
-
-[docs/background.md](docs/background.md) covers:
-
-- what Sanitize is and how it differs from Format NVM;
-- the Secure Erase Settings (SES) levels;
-- the ATA SANITIZE feature set;
-- what NIST SP 800-88r2 expects from cryptographic erase and from sanitization records.
+- [How it works](docs/how-it-works.md): erase methods, verification, RAID reset, controller erase, firmware floor
+- [Tested hardware](docs/tested-hardware.md): controllers and drives it has passed on, and controller quirks seen
+- [Report format](docs/report.md)
+- [Background](docs/background.md): Sanitize vs Format, Secure Erase Settings, ATA SANITIZE, NIST SP 800-88r2
+- [Development and releasing](docs/development.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

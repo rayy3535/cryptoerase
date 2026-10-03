@@ -22,9 +22,9 @@
 
 | Field | Meaning |
 |---|---|
-| `device` | `/dev/nvmeN` for an NVMe controller, `/dev/sdX` otherwise |
+| `device` | `/dev/nvmeN` for an NVMe controller, `/dev/sdX` for a disk, or the controller slot (`/c0/e32/s0`) for a drive behind a RAID controller that the OS cannot see |
 | `namespaces` | NVMe namespace block devices covered by the record |
-| `interface`, `media_type` | E.g. `NVMe` / `SSD (NVMe)`, `SATA` / `SSD (SATA)` |
+| `interface`, `media_type` | E.g. `NVMe` / `SSD (NVMe)`, `SATA` / `SSD (SATA)`, `SAS` / `HDD (SAS)` |
 | `model`, `serial`, `firmware`, `capacity_bytes` | Drive identity |
 | `attach` | SCSI host driver and SCSI inquiry vendor/model (SCSI-class disks) |
 | `nvme` | VER, OACS, SANICAP, FNA, TNVMCAP, UNVMCAP, and the capability bits decoded from them |

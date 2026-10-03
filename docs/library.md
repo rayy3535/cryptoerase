@@ -1,0 +1,24 @@
+# Library
+
+The package is `github.com/rayy3535/cryptoerase`; API documentation is on [pkg.go.dev](https://pkg.go.dev/github.com/rayy3535/cryptoerase).
+
+Every backend in `Options` can be replaced:
+
+| Option | Default |
+|---|---|
+| `OpenNVMe` | `nvme.OpenController` |
+| `ATA` | `*ata.Hdparm` |
+| `PERC` | `*perc.Lister` |
+| `OpenBlock` | `blockdev.Open` |
+
+The sysfs, procfs and /dev roots are also configurable. The tests use this to simulate whole servers.
+
+Subpackages are usable on their own:
+
+| Package | Contents |
+|---|---|
+| `nvme` | Admin passthrough, Identify / log page decoding, Sanitize and Format encoding, status codes |
+| `ata` | IDENTIFY DEVICE decoding, SANITIZE status, hdparm backend |
+| `tcg` | TCG Storage Level 0 Discovery decoding |
+| `blockdev` | Aligned O_DIRECT I/O |
+| `perc` | perccli / storcli: configuration, virtual disks, drive state changes, controller crypto erase, event log |

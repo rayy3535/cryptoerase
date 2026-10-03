@@ -1,0 +1,33 @@
+# Tested hardware
+
+Combinations on which a full erase passed on real servers: every drive erased, the device or controller confirmed it, and every marker changed.
+
+| Controller | Drives | Starting state | Erase path | Passed with |
+|---|---|---|---|---|
+| None (PCIe, native NVMe) | Dell Ent NVMe v2 AGN MU U.2 6.4TB ×2 | — | NVMe Sanitize, Crypto Erase | 0.1.0-rc.2 |
+| PERC H355 Front (FW 52.30.0-6347) | Samsung MZ7LH960HAJR-00005, SATA SSD 960 GB ×2 | Non-RAID | Controller crypto erase | 0.1.0-rc.3 |
+| PERC H730P Mini (FW 4.300.00-8366) | Samsung MZ7LH480HBHQ0D3, SATA SSD 480 GB ×10 | Non-RAID | Controller crypto erase | 0.4.1 |
+| PERC H730P Mini | Intel SSDSC2KB960G8, SATA SSD 960 GB ×6 | One virtual disk over all six, `--raid-reset` | Controller crypto erase | 0.4.1 |
+| PERC (model not recorded) | Seagate ST1200MM0099, SAS HDD 1.2 TB ×2 | Non-RAID, after `--raid-reset` from RAID1 | Controller crypto erase | 0.4.1 |
+
+The PERC H355 machine was a PowerEdge R7525, with the NVMe drives and the H355 in the same server. Per drive, the controller erase took about 1–3 s on SSDs and 6–9 s on the SAS hard disks, mostly for the markers.
+
+## Controller behaviour seen
+
+| Controller | What happened | How the tool handles it |
+|---|---|---|
+| PERC H355 | ATA pass-through returns no ATA registers (fixed-format sense, all fields zero; hdparm: `bad/missing sense data`). The result of SANITIZE cannot be read. | The controller erases the drive |
+| PERC H730P | SANITIZE through ATA pass-through is rejected (I/O error), but the drive completes it. The controller then reports the drive NOT READY and fails reads and writes. Its own crypto erase of such a drive fails (`Error f0`) and marks it Unconfigured Bad. A power cycle clears it. | The controller erases the drive; hdparm SANITIZE is not sent when the controller can erase. A drive that rejects writes is reported `FAIL` with recovery steps. |
+| PERC (H355, H730P) | `show erase` reads `Not in progress` before and after a crypto erase, which takes no time. | The result is read from the event log |
+| megaraid_sas | Virtual disks on SCSI channel ≥ 2. Pass-through drives on channel 0/1, with target = controller device ID. | Used to tell drives from virtual disks and to match drives to slots |
+
+## Adding to this list
+
+Run `cryptoerase --inventory`, then an erase, on spare hardware. Open an issue or pull request with:
+- the controller model and firmware (`perccli64 /c0 show | grep -iE "Product Name|FW Version"`);
+- the drive models;
+- the starting state (RAID, non-RAID, Ready);
+- the version;
+- the result.
+
+Leave out serial numbers and service tags.
