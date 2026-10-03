@@ -67,6 +67,13 @@ func (f *fakeRAID) StartCryptoErase(_ context.Context, c int, slot string) (stri
 			f.event("Erase failed on "+pd+" (Error 02)", d.DID)
 		case "noop":
 			f.event("Erase completed on "+pd, d.DID)
+		case "flood": // PERC H730P: a drive that is not ready floods the log
+			f.event("Erase started on "+pd, d.DID)
+			clear(f.media[slot])
+			f.event("Erase completed on "+pd, d.DID)
+			for range 300 {
+				f.event("Unexpected sense: "+pd+" Path 500056b328dea5c3, CDB: 00 00 00 00 00 00, Sense: 2/05/00", nil)
+			}
 		default:
 			f.event("Erase started on "+pd, d.DID)
 			clear(f.media[slot])
@@ -157,6 +164,17 @@ func TestPERCEraseSATA(t *testing.T) {
 	}
 }
 
+// The erase result is found however many events follow it.
+func TestPERCEraseEventFlood(t *testing.T) {
+	h, f, _ := percHost(t)
+	f.outcome["68:0"] = "flood"
+	rep := h.run(percOptions(h, f, ModeErase))
+	r := wantResult(t, rep, "sda", Pass, "")
+	if r.DeviceStatus.PERCErase.Event.Description != "Erase completed on PD 26(e0x44/s0)" {
+		t.Fatalf("%+v", r.DeviceStatus.PERCErase.Event)
+	}
+}
+
 func TestPERCEraseInventory(t *testing.T) {
 	h, f, _ := percHost(t)
 	before := h.sum("sda")
@@ -196,7 +214,7 @@ func TestPERCEraseFailures(t *testing.T) {
 		}, "not erased; setting the drive back to non-RAID also failed: Failure B", 3},
 		{"never comes back", func(f *fakeRAID) { f.jbod["68:0"] = nil }, "did not come back to the OS within 20ms", 3},
 		{"event log unreadable", func(f *fakeRAID) { f.eventsErr = errors.New("perccli64 crashed") }, "cannot read the controller event log, which holds the erase result: perccli64 crashed; drive not modified", 0},
-		{"unknown serial", func(f *fakeRAID) { f.ctrls[0].Drives[0].Serial, f.ctrls[0].Drives[0].WWN = "OTHER", "" }, `serial "EXAMPLESATA0001" not found among the controller's drives; not erased`, 0},
+		{"unknown serial", func(f *fakeRAID) { f.ctrls[0].Drives[0].Serial, f.ctrls[0].Drives[0].WWN = "OTHER", "" }, `; erase through the controller not possible: serial "EXAMPLESATA0001" not found among the controller's drives`, 0},
 		{"two matches", func(f *fakeRAID) { f.ctrls[0].Drives = append(f.ctrls[0].Drives, f.ctrls[0].Drives[0]) }, "matches 2 controller drives", 0},
 		{"not crypto capable", func(f *fakeRAID) { f.ctrls[0].Drives[0].CryptoErase = false }, "does not report drive /c0/e68/s0 as cryptographic-erase capable", 0},
 		{"not JBOD", func(f *fakeRAID) { f.ctrls[0].Drives[0].State = "UGood" }, `is in state "UGood", not JBOD`, 0},
@@ -224,13 +242,16 @@ func TestPERCEraseFailures(t *testing.T) {
 func TestPERCEraseUnavailable(t *testing.T) {
 	h, _, _ := percHost(t)
 	rep := h.run(h.options(ModeErase)) // fakePERC only lists drives
-	wantResult(t, rep, "sda", Fail, "the RAID backend cannot erase through the controller; not erased")
+	wantResult(t, rep, "sda", Fail, "erase through the controller not possible: the RAID backend cannot erase through the controller")
 
 	h = newHost(t)
 	d := &fakeATADisk{words: ataWords("M", "S", "F", true, false), behaviour: "noregs"}
 	h.addSCSI("sda", scsiSpec{vendor: "ATA", driver: "mpt3sas", ata: d})
 	rep = h.run(h.options(ModeErase))
-	wantResult(t, rep, "sda", Fail, "the mpt3sas controller passes ATA commands through but does not return the drive's status, so a sanitize cannot be confirmed; not erased. Use the controller's own erase")
+	r := wantResult(t, rep, "sda", Fail, "the mpt3sas controller passes ATA commands through but does not return the drive's status, so a sanitize cannot be confirmed; not erased (hdparm --sanitize-status")
+	if strings.Contains(r.Reason, "through the controller not possible") {
+		t.Fatalf("controller erase considered for mpt3sas: %q", r.Reason)
+	}
 }
 
 func TestPERCEraseLockedDrive(t *testing.T) {
@@ -317,4 +338,42 @@ func TestPERCEraseRemovalFails(t *testing.T) {
 // kernel.
 func sdaDeleteFile(h *testHost) string {
 	return filepath.Join(h.sys, "devices/pci0000:00", "host"+strconv.Itoa(3*7+int('a')), "target0:0:0", "0:0:0:sda", "delete")
+}
+
+// Behind a PERC the controller erases the drive even when ATA pass-through
+// looks usable: another PERC rejected SANITIZE sent through it.
+func TestPERCErasePreferredOverHdparm(t *testing.T) {
+	h, f, d := percHost(t)
+	d.behaviour = "ok"
+	rep := h.run(percOptions(h, f, ModeErase))
+	r := wantResult(t, rep, "sda", Pass, "")
+	if strings.Join(f.calls, "|") != strings.Join(percCommands, "|") || len(d.calls) != 0 {
+		t.Fatalf("controller %v, hdparm %v", f.calls, d.calls)
+	}
+	if r.DeviceStatus.PERCErase == nil || r.TechniqueDetail != "drive cryptographic erase by the PERC/MegaRAID controller (start erase crypto); result from the controller event log" {
+		t.Fatalf("%+v", r)
+	}
+}
+
+// If the controller cannot erase the drive, hdparm is tried, and its failure
+// says why the controller was not used.
+func TestPERCEraseFallbackToHdparm(t *testing.T) {
+	h, f, d := percHost(t)
+	d.behaviour = "reject"
+	f.ctrls[0].Drives[0].CryptoErase = false
+	rep := h.run(percOptions(h, f, ModeErase))
+	wantResult(t, rep, "sda", Fail, "SANITIZE CRYPTO SCRAMBLE rejected: hdparm ")
+	wantResult(t, rep, "sda", Fail, "; erase through the controller not possible: the controller does not report drive /c0/e68/s0 as cryptographic-erase capable")
+	if len(f.calls) != 0 {
+		t.Fatalf("controller commands %v", f.calls)
+	}
+
+	h, f, d = percHost(t)
+	d.behaviour = "ok"
+	f.ctrls[0].Drives[0].State = "Onln"
+	rep = h.run(percOptions(h, f, ModeErase))
+	wantResult(t, rep, "sda", Pass, "")
+	if !slices.Contains(d.calls, "crypto-scramble") {
+		t.Fatalf("hdparm not used: %v", d.calls)
+	}
 }
