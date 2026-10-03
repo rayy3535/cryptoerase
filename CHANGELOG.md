@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.1 (2026-10-03)
+
+- Removed the recovery erase added in 0.4.0. It was meant for a drive behind a PERC that rejects writes: erase it once through the controller, then again with markers. On the PERC H730P that erase failed on every blocked drive (`Erase failed … (Error f0)`), and the controller then marked them Unconfigured Bad, so they disappeared from the OS. The one drive that had worked again (sdd) had been writable before its erase, so the premise was wrong.
+- Such a SATA drive now gets one SANITIZE STATUS EXT (read-only) and a retry. If writes are still rejected, it is reported `FAIL` without any controller command, with the next steps: power-cycle, `set good force` for drives in state UBad, rerun.
+- After SANITIZE through hdparm is rejected on a megaraid_sas controller, the drive's sanitize status is read at once, so the drive is not left blocked, and is reported. hdparm is only used there when the controller cannot erase the drive.
+
 ## v0.4.0 (2026-10-03)
 
 - **SAS drives behind a PERC.** Drives a PERC/MegaRAID controller passes through (JBOD, non-RAID) are told apart from virtual disks by the SCSI channel. megaraid_sas puts virtual disks on channel 2 and above. Before, every megaraid_sas disk whose vendor was not "ATA" was taken for a virtual disk. On a PowerEdge with two SAS hard disks (ST1200MM0099), `--raid-reset` exposed them, and the first then reused the name of the deleted virtual disk. The run reported "PERC virtual disk still present after the RAID reset deleted it" and "set to non-RAID but not visible to the OS".

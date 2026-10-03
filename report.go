@@ -220,9 +220,8 @@ type PERCErase struct {
 	// ReattachedAs is the block device the drive came back as, when its
 	// name changed.
 	ReattachedAs string `json:"reattached_as,omitempty"`
-	// Recovery is set when the drive rejected writes before the erase and
-	// a first controller erase, without markers, made it usable again.
-	// Commands then lists both erases.
+	// Recovery is set when the drive rejected writes before the erase
+	// until a SANITIZE STATUS EXT was sent to it.
 	Recovery string `json:"recovery,omitempty"`
 }
 

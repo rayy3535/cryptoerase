@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rayy3535/cryptoerase/ata"
 	"github.com/rayy3535/cryptoerase/blockdev"
 	"github.com/rayy3535/cryptoerase/perc"
 )
@@ -373,7 +374,10 @@ func TestPERCEraseFallbackToHdparm(t *testing.T) {
 	f.ctrls[0].Drives[0].CryptoErase = false
 	rep := h.run(percOptions(h, f, ModeErase))
 	wantResult(t, rep, "sda", Fail, "SANITIZE CRYPTO SCRAMBLE rejected: hdparm ")
-	wantResult(t, rep, "sda", Fail, "; erase through the controller not possible: the controller does not report drive /c0/e68/s0 as cryptographic-erase capable")
+	r := wantResult(t, rep, "sda", Fail, "; erase through the controller not possible: the controller does not report drive /c0/e68/s0 as cryptographic-erase capable")
+	if !strings.Contains(r.Reason, "; the drive's sanitize status afterwards: SD0") || r.DeviceStatus == nil || r.DeviceStatus.ATASanitize == nil {
+		t.Fatalf("%q %+v", r.Reason, r.DeviceStatus)
+	}
 	if len(f.calls) != 0 {
 		t.Fatalf("controller commands %v", f.calls)
 	}
@@ -414,46 +418,62 @@ func stuckOptions(o Options, stuck *atomic.Bool) Options {
 	return o
 }
 
-// A drive that rejects writes is erased once by the controller to make it
-// usable, then erased again with markers.
-func TestPERCEraseRecoversStuckDrive(t *testing.T) {
-	h, f, _ := percHost(t)
-	var stuck atomic.Bool
-	stuck.Store(true)
-	f.onErase = func(string) { stuck.Store(false) }
-	rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
-	r := wantResult(t, rep, "sda", Pass, "")
-	pe := r.DeviceStatus.PERCErase
-	want := strings.Join(append(slices.Clone(percCommands), percCommands...), "|")
-	if strings.Join(f.calls, "|") != want || strings.Join(pe.Commands, "|") != want {
-		t.Fatalf("calls %v, recorded %v", f.calls, pe.Commands)
-	}
-	if !strings.Contains(pe.Recovery, "input/output error") || !strings.Contains(pe.Recovery, `a first controller erase ("Erase completed on PD 26(e0x44/s0)") made it writable again`) ||
-		pe.Outcome != "completed" || filepath.Base(pe.ReattachedAs) != "sdd" {
-		t.Fatalf("%+v", pe)
-	}
-	if r.Verification.Changed != r.Verification.Samples {
-		t.Fatalf("verification %+v", r.Verification)
+// A drive that rejects writes is not handed to the controller: on a PERC
+// H730P such an erase failed (Error f0) and the drive became Unconfigured
+// Bad.
+func TestPERCEraseDriveRejectsWrites(t *testing.T) {
+	old := percStatusSettle
+	percStatusSettle = time.Millisecond
+	t.Cleanup(func() { percStatusSettle = old })
+	for _, behaviour := range []string{"noregs", "ok"} { // status unreadable, or read but no help
+		t.Run(behaviour, func(t *testing.T) {
+			h, f, d := percHost(t)
+			d.behaviour = behaviour
+			var stuck atomic.Bool
+			stuck.Store(true)
+			rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
+			wantResult(t, rep, "sda", Fail, "the drive rejects writes, so no markers could be written: marker write failed at offset 0: write ")
+			wantResult(t, rep, "sda", Fail, "Power-cycle the server, set any drive in state UBad good (perccli64 /c0/e68/s0 set good force), and rerun")
+			if len(f.calls) != 0 {
+				t.Fatalf("controller commands %v", f.calls)
+			}
+			if !slices.Contains(d.calls, "status") {
+				t.Fatalf("no SANITIZE STATUS sent: %v", d.calls)
+			}
+		})
 	}
 }
 
-func TestPERCEraseRecoveryFails(t *testing.T) {
-	t.Run("still rejects writes", func(t *testing.T) {
-		h, f, _ := percHost(t)
-		var stuck atomic.Bool
-		stuck.Store(true)
-		rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
-		wantResult(t, rep, "sda", Fail, "cannot write markers before erase")
-		if len(f.calls) != 3 {
-			t.Fatalf("calls %v", f.calls)
-		}
-	})
-	t.Run("recovery erase fails", func(t *testing.T) {
-		h, f, _ := percHost(t)
-		var stuck atomic.Bool
-		stuck.Store(true)
-		f.outcome["68:0"] = "failed"
-		rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
-		wantResult(t, rep, "sda", Fail, "and a controller erase to make it usable again failed: controller event log: Erase failed on PD 26(e0x44/s0) (Error 02); treat the drive as not erased")
-	})
+// statusHook calls onStatus on every SANITIZE STATUS.
+type statusHook struct {
+	*fakeATA
+	onStatus func()
+}
+
+func (s statusHook) SanitizeStatus(ctx context.Context, dev string) (*ata.SanitizeStatus, error) {
+	s.onStatus()
+	return s.fakeATA.SanitizeStatus(ctx, dev)
+}
+
+// A PERC H730P keeps a SATA drive blocked after a pass-through SANITIZE
+// until it sees SANITIZE STATUS report it over; then one erase is enough.
+func TestPERCEraseUnblockedBySanitizeStatus(t *testing.T) {
+	old := percStatusSettle
+	percStatusSettle = time.Millisecond
+	t.Cleanup(func() { percStatusSettle = old })
+	h, f, d := percHost(t)
+	d.behaviour = "ok"
+	var stuck atomic.Bool
+	stuck.Store(true)
+	o := stuckOptions(percOptions(h, f, ModeErase), &stuck)
+	o.ATA = statusHook{h.ata, func() { stuck.Store(false) }}
+	rep := h.run(o)
+	r := wantResult(t, rep, "sda", Pass, "")
+	pe := r.DeviceStatus.PERCErase
+	if strings.Join(f.calls, "|") != strings.Join(percCommands, "|") || !strings.Contains(pe.Recovery, "until a SANITIZE STATUS EXT reported SD0") {
+		t.Fatalf("calls %v recovery %q", f.calls, pe.Recovery)
+	}
+	if slices.Contains(d.calls, "crypto-scramble") {
+		t.Fatal("SANITIZE sent through hdparm")
+	}
 }
