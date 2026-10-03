@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -32,7 +33,8 @@ type fakeRAID struct {
 	outcome   map[string]string // slot -> completed (default) | failed | none | noop | progress
 	events    []perc.Event      // oldest first
 	eventsErr error
-	onEvents  func() // called on every Events
+	onEvents  func()            // called on every Events
+	onErase   func(slot string) // called when an erase starts
 	ctrlCalls int
 }
 
@@ -44,11 +46,30 @@ func (f *fakeRAID) List(context.Context) ([]perc.Drive, error) {
 	return all, nil
 }
 
+// Controllers returns a copy of the configuration, as a fresh CLI call does.
 func (f *fakeRAID) Controllers(context.Context) ([]perc.Controller, error) {
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.ctrlCalls++
-	f.mu.Unlock()
-	return f.ctrls, f.ctrlErr
+	out := make([]perc.Controller, len(f.ctrls))
+	for i, c := range f.ctrls {
+		c.Drives, c.VDs = slices.Clone(c.Drives), slices.Clone(c.VDs)
+		out[i] = c
+	}
+	return out, f.ctrlErr
+}
+
+// setState changes a drive's state, as the controller does after a command.
+func (f *fakeRAID) setState(slot, state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.ctrls {
+		for j := range f.ctrls[i].Drives {
+			if d := &f.ctrls[i].Drives[j]; d.Slot == slot {
+				d.State, d.DG = state, "-"
+			}
+		}
+	}
 }
 
 func (f *fakeRAID) run(cmd string, effect func()) (string, error) {
@@ -69,6 +90,11 @@ func (f *fakeRAID) DeleteVD(_ context.Context, c, vd int) (string, error) {
 		if name := f.vdDisk[vd]; name != "" {
 			f.h.removeSCSI(name)
 		}
+		f.mu.Lock()
+		for i := range f.ctrls {
+			f.ctrls[i].VDs = slices.DeleteFunc(f.ctrls[i].VDs, func(v perc.VirtualDisk) bool { return v.VD == vd })
+		}
+		f.mu.Unlock()
 	})
 }
 
@@ -77,7 +103,12 @@ func (f *fakeRAID) DeleteHotSpare(_ context.Context, c int, slot string) (string
 }
 
 func (f *fakeRAID) SetJBOD(_ context.Context, c int, slot string) (string, error) {
-	return f.run(fmt.Sprintf("perccli64 %s set jbod", perc.Path(c, slot)), f.jbod[slot])
+	return f.run(fmt.Sprintf("perccli64 %s set jbod", perc.Path(c, slot)), func() {
+		f.setState(slot, "JBOD")
+		if expose := f.jbod[slot]; expose != nil {
+			expose()
+		}
+	})
 }
 
 func pd(slot string, did int, state string, dg any, serial, wwn string) perc.Drive {

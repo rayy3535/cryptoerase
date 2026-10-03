@@ -104,17 +104,22 @@ func (r *runner) reportHiddenDrives(ctx context.Context, rep *Report) {
 	}
 }
 
-// recorded reports whether a drive already has a record: by serial number,
-// WWN, controller slot, or the block device it is visible as.
+// recorded reports whether a drive already has a record.
 func (r *runner) recorded(rep *Report, d perc.Drive, slot string) bool {
+	return r.recordOf(rep, d, slot) != nil
+}
+
+// recordOf returns the record of a controller drive: by serial number, WWN,
+// controller slot, or the block device it is visible as; nil if none.
+func (r *runner) recordOf(rep *Report, d perc.Drive, slot string) *DriveRecord {
 	dev := ""
 	if name := r.findExposed(d); name != "" {
 		dev = r.devPath(name)
 	}
 	for _, rec := range rep.Drives {
 		if exposedMatches(rec, d) || (rec.Attach != nil && rec.Attach.RAIDSlot == slot) || (dev != "" && rec.Device == dev) {
-			return true
+			return rec
 		}
 	}
-	return false
+	return nil
 }

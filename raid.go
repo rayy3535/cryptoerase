@@ -228,12 +228,12 @@ func (r *runner) waitExposed(ctx context.Context) {
 	}
 }
 
-// findExposed returns the block device name of a physical drive, matched by
-// WWN or serial number against sysfs.
+// findExposed returns the block device name of a physical drive (see
+// blockMatchesDrive), or "".
 func (r *runner) findExposed(d perc.Drive) string {
 	blocks, _ := os.ReadDir(filepath.Join(r.opts.SysfsRoot, "block"))
 	for _, b := range blocks {
-		if wwidMatches(readTrim(filepath.Join(r.opts.SysfsRoot, "block", b.Name(), "device", "wwid")), d) {
+		if r.blockMatchesDrive(b.Name(), d) {
 			return b.Name()
 		}
 	}
@@ -311,14 +311,7 @@ type raidNote struct {
 func (r *runner) reconcileRAID(rep *Report) {
 	for _, e := range r.raidExposed {
 		slot := perc.Path(e.ctrl, e.drive.Slot)
-		var match *DriveRecord
-		for _, rec := range rep.Drives {
-			if exposedMatches(rec, e.drive) {
-				match = rec
-				break
-			}
-		}
-		if match != nil {
+		if match := r.recordOf(rep, e.drive, slot); match != nil {
 			if match.Attach == nil {
 				match.Attach = &Attach{}
 			}
