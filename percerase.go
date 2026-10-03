@@ -32,6 +32,10 @@ type PERCEraser interface {
 // erase result can be many events back.
 const maxEventWindow = 4096
 
+// percStatusSettle is how long the controller gets to release a drive after
+// a SANITIZE STATUS EXT showed its sanitize over.
+var percStatusSettle = 2 * time.Second
+
 // udevSettle is how long udev gets to re-read a disk's partition table after
 // the markers' write handle is closed, when the disk could not be removed
 // from the kernel first.
@@ -108,11 +112,23 @@ func (r *runner) percErase(ctx context.Context, rec *DriveRecord, name, driver s
 	orig := name
 	host := r.scsiHost(name)
 	m, err := r.writeMarkers(r.devPath(name))
+	if err != nil && errors.Is(err, syscall.EIO) && rec.Interface == "SATA" {
+		// A PERC H730P that passed a SANITIZE through to a SATA drive
+		// reports the drive NOT READY and fails every read and write, until
+		// it sees a SANITIZE STATUS EXT (read-only) report the sanitize over.
+		if st, serr := r.opts.ATA.SanitizeStatus(ctx, r.devPath(name)); serr == nil && !st.InProgress {
+			r.log.Warn("drive rejected writes; retrying after SANITIZE STATUS", "device", r.devPath(name), "state", st.State, "error", err)
+			if sleep(ctx, percStatusSettle) == nil {
+				first := err
+				if m, err = r.writeMarkers(r.devPath(name)); err == nil {
+					pr.Recovery = fmt.Sprintf("the drive rejected writes (%v) until a SANITIZE STATUS EXT reported %s, last sanitize completed without error: %v", first, st.State, st.CompletedWithoutError)
+				}
+			}
+		}
+	}
 	if err != nil && errors.Is(err, syscall.EIO) {
-		// A PERC H730P left drives NOT READY after a SANITIZE sent through
-		// ATA pass-through, failing every read and write; a controller erase
-		// made them usable again. Erase once to recover, then erase again
-		// with markers.
+		// Still rejected: erase once through the controller to make the
+		// drive usable, then erase again with markers.
 		again, rerr := r.percRecover(ctx, pe, pr, name, host, d, err)
 		if rerr != nil {
 			return r.done(rec, Fail, fmt.Sprintf("the drive rejects writes (%v), and a controller erase to make it usable again failed: %v; treat the drive as not erased", err, rerr))

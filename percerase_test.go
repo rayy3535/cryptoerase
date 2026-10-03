@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rayy3535/cryptoerase/ata"
 	"github.com/rayy3535/cryptoerase/blockdev"
 	"github.com/rayy3535/cryptoerase/perc"
 )
@@ -373,7 +374,10 @@ func TestPERCEraseFallbackToHdparm(t *testing.T) {
 	f.ctrls[0].Drives[0].CryptoErase = false
 	rep := h.run(percOptions(h, f, ModeErase))
 	wantResult(t, rep, "sda", Fail, "SANITIZE CRYPTO SCRAMBLE rejected: hdparm ")
-	wantResult(t, rep, "sda", Fail, "; erase through the controller not possible: the controller does not report drive /c0/e68/s0 as cryptographic-erase capable")
+	r := wantResult(t, rep, "sda", Fail, "; erase through the controller not possible: the controller does not report drive /c0/e68/s0 as cryptographic-erase capable")
+	if !strings.Contains(r.Reason, "; the drive's sanitize status afterwards: SD0") || r.DeviceStatus == nil || r.DeviceStatus.ATASanitize == nil {
+		t.Fatalf("%q %+v", r.Reason, r.DeviceStatus)
+	}
 	if len(f.calls) != 0 {
 		t.Fatalf("controller commands %v", f.calls)
 	}
@@ -456,4 +460,38 @@ func TestPERCEraseRecoveryFails(t *testing.T) {
 		rep := h.run(stuckOptions(percOptions(h, f, ModeErase), &stuck))
 		wantResult(t, rep, "sda", Fail, "and a controller erase to make it usable again failed: controller event log: Erase failed on PD 26(e0x44/s0) (Error 02); treat the drive as not erased")
 	})
+}
+
+// statusHook calls onStatus on every SANITIZE STATUS.
+type statusHook struct {
+	*fakeATA
+	onStatus func()
+}
+
+func (s statusHook) SanitizeStatus(ctx context.Context, dev string) (*ata.SanitizeStatus, error) {
+	s.onStatus()
+	return s.fakeATA.SanitizeStatus(ctx, dev)
+}
+
+// A PERC H730P keeps a SATA drive blocked after a pass-through SANITIZE
+// until it sees SANITIZE STATUS report it over; then one erase is enough.
+func TestPERCEraseUnblockedBySanitizeStatus(t *testing.T) {
+	old := percStatusSettle
+	percStatusSettle = time.Millisecond
+	t.Cleanup(func() { percStatusSettle = old })
+	h, f, d := percHost(t)
+	d.behaviour = "ok"
+	var stuck atomic.Bool
+	stuck.Store(true)
+	o := stuckOptions(percOptions(h, f, ModeErase), &stuck)
+	o.ATA = statusHook{h.ata, func() { stuck.Store(false) }}
+	rep := h.run(o)
+	r := wantResult(t, rep, "sda", Pass, "")
+	pe := r.DeviceStatus.PERCErase
+	if strings.Join(f.calls, "|") != strings.Join(percCommands, "|") || !strings.Contains(pe.Recovery, "until a SANITIZE STATUS EXT reported SD0") {
+		t.Fatalf("calls %v recovery %q", f.calls, pe.Recovery)
+	}
+	if slices.Contains(d.calls, "crypto-scramble") {
+		t.Fatal("SANITIZE sent through hdparm")
+	}
 }

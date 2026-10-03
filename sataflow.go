@@ -176,6 +176,16 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 		if errors.Is(err, ata.ErrNoRegisters) {
 			return r.done(rec, Fail, fmt.Sprintf("SANITIZE CRYPTO SCRAMBLE sent, but the drive's response did not come back through the %s controller; treat the drive as not erased (%v)%s", driver, err, ctrlNote))
 		}
+		if driver == "megaraid_sas" {
+			// A PERC H730P rejected the command, the drive completed it, and
+			// the controller then blocked the drive until a SANITIZE STATUS
+			// showed it over. Ask, so the drive is not left blocked, and
+			// report what the drive says.
+			if st, serr := r.opts.ATA.SanitizeStatus(ctx, dev); serr == nil {
+				rec.DeviceStatus = &DeviceStatus{ATASanitize: st}
+				ctrlNote += fmt.Sprintf("; the drive's sanitize status afterwards: %s, last sanitize completed without error: %v (not taken as proof, as the controller reported an error)", st.State, st.CompletedWithoutError)
+			}
+		}
 		return r.done(rec, Fail, fmt.Sprintf("SANITIZE CRYPTO SCRAMBLE rejected: %v%s", err, ctrlNote))
 	}
 	st, err = r.waitATASanitize(ctx, dev)
