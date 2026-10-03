@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0 (2026-10-03)
+
+- SATA drives behind a PERC/MegaRAID controller are erased by the controller (`set good force`, `start erase crypto`, `set jbod`, result from the event log, markers verified) whenever the controller reports them "Cryptographic Erase Capable". Before, this was done only when ATA pass-through returned no registers. On a PERC H730P Mini (firmware 4.300.00-8366) pass-through SANITIZE was rejected with an I/O error while the drives completed it; the controller then reported them NOT READY and failed all reads. The controller erase worked on the same drives and made them usable again. hdparm is the fallback when the controller cannot erase a drive, and its failure reason says why.
+- The erase result is searched among all controller events since the erase started, not the latest 64: the H730P logs an "Unexpected sense" event for every TEST UNIT READY to a drive that is not ready.
 ## v0.2.1 (2026-10-02)
 
 - Drives behind a PERC/MegaRAID controller that the OS cannot see (state Ready / UGood, hot spares, drives in no virtual disk) were missing from the report. A host whose only other drives passed reported `PASS` while those drives still held data. They now get a record named by their slot (`/c0/e68/s0`):

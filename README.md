@@ -161,18 +161,24 @@ Whether ATA passthrough reaches a SATA drive set to non-RAID depends on the cont
 
 ### SATA drives the controller erases
 
-Some controllers forward ATA commands to a non-RAID SATA drive but not the drive's registers, so the outcome of a sanitize cannot be read back. On a PERC H355 the answer is fixed-format sense with every register field zero, and hdparm reports `bad/missing sense data`. Behind a PERC/MegaRAID controller (`megaraid_sas`), such a drive is erased by the controller instead, if the controller reports it "Cryptographic Erase Capable" (ISE or SED drives):
+Behind a PERC/MegaRAID controller (`megaraid_sas`), ATA pass-through is not a dependable way to sanitize a non-RAID SATA drive. Two PERCs each failed it in a different way:
+- **PERC H355:** forwards ATA commands but returns none of the drive's registers (fixed-format sense, every register field zero; hdparm reports `bad/missing sense data`), so the outcome of a sanitize cannot be read.
+- **PERC H730P:** rejects SANITIZE with an I/O error. The drive nevertheless completes the sanitize, and the controller then reports it NOT READY (`Unexpected sense ... 2/05/00` in its event log) and fails every read and write until the drive is reset.
+
+So a SATA drive behind such a controller is erased by the controller whenever the controller reports it "Cryptographic Erase Capable" (ISE or SED drives):
 
 1. Write the markers through the OS.
 2. Remove the disk from the kernel (`/sys/block/sdX/device/delete`). The controller hides the drive in the next step, and reads of the stale disk would fail with I/O errors in the kernel log. The markers' write handle is closed only after the removal: closing it makes udev re-read the partition table, and that read would race with the removal.
 3. `set good force`: the drive becomes unconfigured good, which the controller requires for an erase.
 4. `start erase crypto`.
-5. Wait for the result in the controller event log (`show events`): `Erase completed on PD 26(e0x44/s0)` or `Erase failed ...`. `show erase` cannot tell: it reads `Not in progress` both before and after an erase that takes no time.
+5. Wait for the result in the controller event log (`show events`): `Erase completed on PD 26(e0x44/s0)` or `Erase failed ...`. All events since the erase started are read, however many other events (such as "Unexpected sense") are logged in between. `show erase` cannot tell: it reads `Not in progress` both before and after an erase that takes no time.
 6. `set jbod`. This happens after a failed erase too, so the drive is left non-RAID as it was found.
 7. Wait for the disk to come back, matched by WWN or serial; its name may change.
 8. Verify the markers.
 
-The drive passes only with `Erase completed` in the event log and every marker changed. The commands, the event and the new device name are in the report under `device_status.perc_erase`. In `--inventory` the drive is `PLANNED` with method `perc-crypto-erase`. Drives that do not match exactly one controller drive by serial number or WWN, that are not JBOD, or that the controller does not report as crypto-erase capable are reported `FAIL`, as are such drives behind other controller types.
+The drive passes only with `Erase completed` in the event log and every marker changed. The commands, the event and the new device name are in the report under `device_status.perc_erase`. In `--inventory` the drive is `PLANNED` with method `perc-crypto-erase`.
+
+If the controller cannot erase the drive, the tool falls back to SANITIZE through hdparm, and a failure there also states why the controller was not used. The controller cannot erase a drive that does not match exactly one controller drive by serial number or WWN, is not JBOD, or is not reported as crypto-erase capable. A drive the H730P left NOT READY after a pass-through SANITIZE comes back working after the controller erase.
 
 ## Library
 

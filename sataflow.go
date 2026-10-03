@@ -108,24 +108,31 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 		return r.done(rec, Fail, fc.Detail)
 	}
 	rec.NISTMethod = "Purge"
+	rec.Scope = "all user data on the device"
+	// Behind a PERC/MegaRAID controller the controller erases the drive when
+	// it can; ATA pass-through is the fallback (see percSATA).
+	ctrlNote := ""
+	if driver == "megaraid_sas" {
+		t, err := r.percEraseTarget(ctx, rec)
+		if err == nil {
+			return r.percSATA(ctx, rec, name, driver, sec, t)
+		}
+		ctrlNote = "; erase through the controller not possible: " + err.Error()
+	}
 	if !id.SanitizeSupported() || !id.CryptoScrambleSupported() {
-		return r.done(rec, Fail, "no ATA SANITIZE CRYPTO SCRAMBLE support")
+		return r.done(rec, Fail, "no ATA SANITIZE CRYPTO SCRAMBLE support"+ctrlNote)
 	}
 	rec.Technique = "Cryptographic Erase"
 	rec.TechniqueDetail = "ATA SANITIZE CRYPTO SCRAMBLE EXT"
-	rec.Scope = "all user data on the device"
 	rec.Command = "hdparm --yes-i-know-what-i-am-doing --sanitize-crypto-scramble " + dev
 	// SANITIZE STATUS EXT changes nothing, so it runs in inventory mode too:
 	// it shows whether the outcome of a sanitize can be read back at all.
 	st, err := r.opts.ATA.SanitizeStatus(ctx, dev)
 	if err != nil {
 		if errors.Is(err, ata.ErrNoRegisters) {
-			if driver == "megaraid_sas" {
-				return r.percSATA(ctx, rec, name, driver, sec, err)
-			}
-			return r.done(rec, Fail, fmt.Sprintf("the %s controller passes ATA commands through but does not return the drive's status, so a sanitize cannot be confirmed; not erased. Use the controller's own erase, or connect the drive to an HBA/AHCI port (%v)", driver, err))
+			return r.done(rec, Fail, fmt.Sprintf("the %s controller passes ATA commands through but does not return the drive's status, so a sanitize cannot be confirmed; not erased (%v)%s", driver, err, ctrlNote))
 		}
-		return r.done(rec, Fail, fmt.Sprintf("sanitize status unreadable: %v", err))
+		return r.done(rec, Fail, fmt.Sprintf("sanitize status unreadable: %v%s", err, ctrlNote))
 	}
 	if st.Frozen {
 		return r.done(rec, Fail, "sanitize is frozen (SANITIZE FREEZE LOCK issued by firmware); power-cycle with the freeze disabled, then rerun")
@@ -159,9 +166,9 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 	start := time.Now()
 	if err := r.opts.ATA.SanitizeCryptoScramble(ctx, dev); err != nil {
 		if errors.Is(err, ata.ErrNoRegisters) {
-			return r.done(rec, Fail, fmt.Sprintf("SANITIZE CRYPTO SCRAMBLE sent, but the drive's response did not come back through the %s controller; treat the drive as not erased (%v)", driver, err))
+			return r.done(rec, Fail, fmt.Sprintf("SANITIZE CRYPTO SCRAMBLE sent, but the drive's response did not come back through the %s controller; treat the drive as not erased (%v)%s", driver, err, ctrlNote))
 		}
-		return r.done(rec, Fail, fmt.Sprintf("SANITIZE CRYPTO SCRAMBLE rejected: %v", err))
+		return r.done(rec, Fail, fmt.Sprintf("SANITIZE CRYPTO SCRAMBLE rejected: %v%s", err, ctrlNote))
 	}
 	st, err = r.waitATASanitize(ctx, dev)
 	rec.DeviceStatus = &DeviceStatus{ATASanitize: st}

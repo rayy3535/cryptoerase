@@ -26,47 +26,64 @@ type PERCEraser interface {
 	SetJBOD(ctx context.Context, c int, slot string) (string, error)
 }
 
-// eventWindow is how many of the latest controller events are searched for
-// the erase result.
-const eventWindow = 64
+// maxEventWindow bounds how many of the latest controller events are read
+// when looking for the erase result. A PERC H730P logs an "Unexpected sense"
+// event for every TEST UNIT READY to a drive that is not ready, so the
+// erase result can be many events back.
+const maxEventWindow = 4096
 
 // udevSettle is how long udev gets to re-read a disk's partition table after
 // the markers' write handle is closed, when the disk could not be removed
 // from the kernel first.
 var udevSettle = 2 * time.Second
 
-// percSATA handles a SATA drive whose ATA status does not come back through
-// its RAID controller (regErr wraps ata.ErrNoRegisters): the controller
-// crypto-erases the drive instead.
+// percTarget is a SATA drive its PERC/MegaRAID controller can crypto-erase.
+type percTarget struct {
+	pe PERCEraser
+	c  perc.Controller
+	d  perc.Drive
+}
+
+// percEraseTarget checks whether the controller in front of a megaraid_sas
+// SATA drive can crypto-erase it. The error says why not.
+func (r *runner) percEraseTarget(ctx context.Context, rec *DriveRecord) (*percTarget, error) {
+	pe, ok := r.opts.PERC.(PERCEraser)
+	if !ok {
+		return nil, errors.New("the RAID backend cannot erase through the controller")
+	}
+	c, d, err := r.percDriveFor(ctx, pe, rec)
+	if err != nil {
+		return nil, err
+	}
+	slot := perc.Path(c.Index, d.Slot)
+	switch {
+	case !strings.EqualFold(d.State, "JBOD"):
+		return nil, fmt.Errorf("controller drive %s is in state %q, not JBOD (non-RAID)", slot, d.State)
+	case !d.CryptoErase:
+		return nil, fmt.Errorf("the controller does not report drive %s as cryptographic-erase capable", slot)
+	case d.DID == nil:
+		return nil, fmt.Errorf("the controller reports no device ID for drive %s", slot)
+	}
+	return &percTarget{pe: pe, c: c, d: d}, nil
+}
+
+// percSATA has the controller crypto-erase a SATA drive behind it. On PERC
+// controllers ATA pass-through is not a dependable way to sanitize: one
+// PERC H355 returned no ATA registers (the result cannot be read), another
+// PERC rejected SANITIZE outright.
 //
 // Erase mode: write the markers through the OS; remove the disk from the
 // kernel, so nothing reads it while the controller hides it; set it
 // unconfigured good; "start erase crypto"; wait for "Erase completed" in the
 // controller event log; set it back to JBOD; wait for the disk to reappear;
 // verify the markers.
-func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver string, sec ata.Security, regErr error) *DriveRecord {
-	noRegs := fmt.Sprintf("the %s controller passes ATA commands through but does not return the drive's status, so a sanitize cannot be confirmed (%v)", driver, regErr)
-	pe, ok := r.opts.PERC.(PERCEraser)
-	if !ok {
-		return r.done(rec, Fail, noRegs+"; the RAID backend cannot erase through the controller; not erased")
-	}
-	c, d, err := r.percDriveFor(ctx, pe, rec)
-	if err != nil {
-		return r.done(rec, Fail, fmt.Sprintf("%s; %v; not erased", noRegs, err))
-	}
+func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver string, sec ata.Security, t *percTarget) *DriveRecord {
+	pe, c, d := t.pe, t.c, t.d
 	slot := perc.Path(c.Index, d.Slot)
 	if rec.Attach == nil {
 		rec.Attach = &Attach{}
 	}
 	rec.Attach.RAIDSlot = slot
-	switch {
-	case !strings.EqualFold(d.State, "JBOD"):
-		return r.done(rec, Fail, fmt.Sprintf("%s; controller drive %s is in state %q, not JBOD (non-RAID); not erased", noRegs, slot, d.State))
-	case !d.CryptoErase:
-		return r.done(rec, Fail, fmt.Sprintf("%s; the controller does not report drive %s as cryptographic-erase capable; not erased", noRegs, slot))
-	case d.DID == nil:
-		return r.done(rec, Fail, fmt.Sprintf("%s; the controller reports no device ID for drive %s; not erased", noRegs, slot))
-	}
 	pr := &PERCErase{Controller: c.Index, Slot: slot, DID: *d.DID, Tool: c.Tool}
 	rec.Technique = "Cryptographic Erase"
 	rec.TechniqueDetail = "drive cryptographic erase by the PERC/MegaRAID controller (start erase crypto); result from the controller event log"
@@ -79,7 +96,7 @@ func (r *runner) percSATA(ctx context.Context, rec *DriveRecord, name, driver st
 			rec.Command,
 			fmt.Sprintf("%s %s set jbod", c.Tool, slot),
 		}
-		return r.done(rec, Planned, fmt.Sprintf("the drive's ATA status does not come back through the %s controller, so the controller erases it: set unconfigured good, start erase crypto, set back to non-RAID", driver))
+		return r.done(rec, Planned, fmt.Sprintf("SATA drive behind the %s controller; the controller erases it: set unconfigured good, start erase crypto, set back to non-RAID", driver))
 	}
 	if sec.Locked {
 		return r.done(rec, Fail, "ATA security is locked (a user password is set); unlock or PSID revert required")
@@ -222,7 +239,7 @@ func (r *runner) waitPERCErase(ctx context.Context, pe PERCEraser, c int, slot s
 		if err := sleep(ctx, every); err != nil {
 			return "", nil, fmt.Errorf("interrupted while the controller was erasing; rerun to verify: %w", err)
 		}
-		evs, err := pe.Events(ctx, c, eventWindow)
+		evs, err := r.eventsSince(ctx, pe, c, base)
 		if err == nil {
 			if o, ev := perc.EraseOutcome(evs, base, did); o != "" {
 				return o, ev, nil
@@ -253,6 +270,21 @@ func (r *runner) waitPERCErase(ctx context.Context, pe PERCEraser, c int, slot s
 			return "", nil, errors.New(msg + "; treat the drive as not erased")
 		}
 	}
+}
+
+// eventsSince reads the controller events newer than base: the newest
+// sequence number first, then that many events (at most maxEventWindow).
+func (r *runner) eventsSince(ctx context.Context, pe PERCEraser, c int, base uint32) ([]perc.Event, error) {
+	last, err := pe.Events(ctx, c, 1)
+	if err != nil {
+		return nil, err
+	}
+	newest := perc.LatestSeq(last)
+	if newest <= base {
+		return nil, nil
+	}
+	n := min(uint64(newest-base), maxEventWindow)
+	return pe.Events(ctx, c, int(n))
 }
 
 // waitPERCDrive waits for a drive set back to JBOD to reappear as a disk,
