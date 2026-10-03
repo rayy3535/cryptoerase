@@ -1,27 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cryptoerase performs and records cryptographic erase of the NVMe
-// and SATA SSDs in a server, e.g. before the server is handed to its next
-// user.
+// Package cryptoerase performs and records cryptographic erase of the drives
+// in a server (NVMe, SATA, and SATA or SAS drives behind a Dell PERC /
+// Broadcom MegaRAID controller), e.g. before the server is handed to its
+// next user.
 //
 // Policy:
 //
 //   - Cryptographic Erase only. NVMe: Sanitize with the Crypto Erase action;
 //     Format NVM with SES=010b only when Options.AllowFormat is set and the
 //     controller reports no unallocated NVM capacity. SATA: ATA SANITIZE
-//     CRYPTO SCRAMBLE EXT.
+//     CRYPTO SCRAMBLE EXT. Behind a PERC/MegaRAID controller: the
+//     controller's cryptographic erase, for drives it reports capable;
+//     Options.RAIDReset first removes the RAID virtual disks.
 //   - Fail closed. There is no fallback to block erase, overwrite, ATA
 //     Security Erase or zero-fill; a drive without a cryptographic erase
-//     method is reported FAIL.
+//     method is reported FAIL or UNHANDLED.
 //   - Firmware floor. Drives matching a FirmwareRule below its minimum are
 //     reported FAIL.
-//   - Drives the host cannot address directly (RAID virtual disks, SAS, HDDs,
-//     disks in use by the running OS, exclusions) are reported UNHANDLED,
-//     never skipped silently.
-//   - Verification: the device's completion status, plus markers. Random
-//     1 MiB markers are written at evenly spaced offsets of every namespace or
-//     disk and read back before the erase; after the erase none may read back
-//     unchanged.
+//   - Drives that cannot be erased (RAID virtual disks without RAIDReset,
+//     drives behind the controller the OS cannot see, HDDs and SAS drives
+//     without a controller crypto erase, disks in use by the running OS,
+//     exclusions) are reported UNHANDLED, never skipped silently.
+//   - Verification: the device's or controller's completion status, plus
+//     markers. Random 1 MiB markers are written at evenly spaced offsets of
+//     every namespace or disk and read back before the erase; after the
+//     erase none may read back unchanged.
 //
 // Drives are processed concurrently (Options.Parallel). Run returns a Report
 // whose ExitCode follows the CLI convention: 0 pass, 1 fail, 2 incomplete.
