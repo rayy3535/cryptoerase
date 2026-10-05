@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.0 (2026-10-05)
+
+- **`--raid-reset` on Broadcom-branded and OEM MegaRAID controllers.** On an LSI SAS3108 in an Inspur server (storcli64), `set jbod` failed on every drive with `command invalid`: the controller's JBOD mode was off, as these controllers ship (Dell PERCs report it on). The configuration read now includes the JBOD mode (`/cN show jbod`). When it is off and drives are to be exposed, the reset turns it on (`/cN set jbod=on`) before setting drives to JBOD, and `raid_reset.enable_jbod` records it. If the firmware then sets unconfigured drives to JBOD by itself, the reset reads the drive states again and skips them. `--inventory` lists the command in the plan.
+
 ## v0.6.0 (2026-10-05)
 
 - **SATA drives behind smartpqi** (Microchip SmartHBA / SmartRAID, seen on an Inspur server with Samsung PM883 drives). The controller passes ATA commands through, but returns the drive's registers in fixed-format sense data, which hdparm does not read (`bad/missing sense data`), so every drive failed with "does not return the drive's status". When that happens, the tool now sets D_SENSE in the disk's Control mode page through SG_IO, so the controller returns descriptor-format sense, and reads the status again. The record shows `attach.descriptor_sense_set`. This is done in `--inventory` too: it changes only the format of error reports, is not saved, and is not changed back. If D_SENSE cannot be set, or is set already, the drive fails as before, and the reason says what was tried.

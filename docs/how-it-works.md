@@ -70,6 +70,7 @@ On a PERC or MegaRAID controller in RAID mode, the OS sees virtual disks, not dr
 3. **Apply,** in erase mode only:
    - remove hot spares (`delete hotsparedrive`);
    - delete the other virtual disks (`/cN/vM delete force`);
+   - if the controller's JBOD mode is off (`/cN show jbod`), turn it on (`/cN set jbod=on`). Broadcom-branded and OEM controllers ship with it off, and refuse `set jbod` on a drive until it is on (`command invalid`). Some firmware then sets every unconfigured drive to JBOD by itself; the tool reads the drive states again and skips those;
    - set their drives and any drives in state Ready to non-RAID (`set jbod`).
 4. **Wait** up to 60 s (`Options.RAIDWait`) for each drive to appear as a block device.
 5. **Erase** each drive on its own. Behind the controller, this is the controller erase described below.

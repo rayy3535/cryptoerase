@@ -25,6 +25,7 @@ The PERC H355 machine was a PowerEdge R7525, with the NVMe drives and the H355 i
 | PERC (H355, H730P) | `show erase` reads `Not in progress` before and after a crypto erase, which takes no time. | The result is read from the event log |
 | megaraid_sas | Virtual disks on SCSI channel ≥ 2. Pass-through drives on channel 0/1, with target = controller device ID. | Used to tell drives from virtual disks and to match drives to slots |
 | LSI SAS3108 (Inspur, not Dell-branded) | perccli64 reports `Controller Count = 0`. | The tool uses the installed CLI that sees a controller (storcli64) |
+| LSI SAS3108 (Inspur, not Dell-branded) | JBOD mode off (`show jbod`: `OFF`; `Support JBOD = Yes`, `Enable JBOD = No`). `set jbod` on a drive fails with `command invalid` (ErrCd 2). | `--raid-reset` turns JBOD mode on first |
 | smartpqi (Microchip SmartHBA / SmartRAID, Inspur) | SATA drives are passed through, but ATA pass-through answers in fixed-format sense data (`70 00 01 00 50 40 …`), which hdparm does not read (`bad/missing sense data`). With D_SENSE set (`sdparm --set=D_SENSE=1`) hdparm reads the status. | The tool sets D_SENSE and asks again |
 
 ## Adding to this list
