@@ -2,6 +2,8 @@
 
 The package is `github.com/rayy3535/cryptoerase`; API documentation is on [pkg.go.dev](https://pkg.go.dev/github.com/rayy3535/cryptoerase).
 
+A complete program that plans and then erases with the RAID reset is in [examples/library/main.go](../examples/library/main.go); the README walks through it.
+
 Every backend in `Options` can be replaced:
 
 | Option | Default |
