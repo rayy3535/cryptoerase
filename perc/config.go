@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -73,32 +71,6 @@ func (d Drive) dgNumber() int {
 // DriveGroup returns the drive group number, or -1 when the drive is in none.
 func (d Drive) DriveGroup() int { return d.dgNumber() }
 
-// tool locates the controller CLI; empty when none is installed. An
-// explicit Path is used as given: if it is wrong, running it fails with an
-// error rather than looking like no CLI is installed.
-func (l *Lister) tool() (path, name string) {
-	if l.Path != "" {
-		return l.Path, filepath.Base(l.Path)
-	}
-	look := l.LookPath
-	if look == nil {
-		look = exec.LookPath
-	}
-	for _, t := range Tools {
-		if p, err := look(t); err == nil {
-			return p, t
-		}
-	}
-	for _, dir := range InstallDirs {
-		for _, t := range Tools {
-			if p, err := look(filepath.Join(dir, t)); err == nil {
-				return p, t
-			}
-		}
-	}
-	return "", ""
-}
-
 func (l *Lister) exec(ctx context.Context, path string, args ...string) ([]byte, error) {
 	run := l.Exec
 	if run == nil {
@@ -117,23 +89,28 @@ func (l *Lister) exec(ctx context.Context, path string, args ...string) ([]byte,
 // (with serial numbers and WWNs). It returns nil with no error when no CLI is
 // installed.
 func (l *Lister) Controllers(ctx context.Context) ([]Controller, error) {
-	path, name := l.tool()
+	path, name := l.tool(ctx)
 	if path == "" {
 		return nil, nil
 	}
 	var pdOut []byte
-	var pdErr error
+	var pdErrs []error
 	for _, args := range [][]string{{"/call/eall/sall", "show", "all", "J"}, {"/call/sall", "show", "all", "J"}} {
 		out, err := l.exec(ctx, path, args...)
 		drives, perr := Parse(out, name)
 		if (err == nil || len(out) > 0) && perr == nil && len(drives) > 0 {
-			pdOut, pdErr = out, nil
+			pdOut = out
 			break
 		}
-		pdErr = errors.Join(err, perr)
+		switch {
+		case err != nil || perr != nil:
+			pdErrs = append(pdErrs, errors.Join(err, perr))
+		default:
+			pdErrs = append(pdErrs, fmt.Errorf("%s: no drives listed%s", strings.Join(args[:len(args)-1], " "), statusNote(out)))
+		}
 	}
 	if pdOut == nil {
-		return nil, fmt.Errorf("%s: list physical drives: %w", name, pdErr)
+		return nil, fmt.Errorf("%s: list physical drives: %w%s", name, errors.Join(pdErrs...), l.noControllerHint(ctx))
 	}
 	vdOut, err := l.exec(ctx, path, "/call/vall", "show", "all", "J")
 	if err != nil && len(vdOut) == 0 {
@@ -367,7 +344,7 @@ func (l *Lister) do(ctx context.Context, args ...string) (string, error) {
 // doJSON runs one command with JSON output, checks every controller's
 // status and returns the decoded document.
 func (l *Lister) doJSON(ctx context.Context, args ...string) (string, *jsonDoc, error) {
-	path, name := l.tool()
+	path, name := l.tool(ctx)
 	if path == "" {
 		return "", nil, errors.New("no PERC/MegaRAID CLI installed")
 	}

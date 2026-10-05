@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -54,6 +55,10 @@ type Lister struct {
 	LookPath func(string) (string, error)
 	Exec     func(ctx context.Context, path string, args ...string) ([]byte, error)
 	Timeout  time.Duration
+
+	mu     sync.Mutex
+	chosen *cli
+	counts map[string]probeResult // by CLI path
 }
 
 // Check reports whether a controller CLI is available: Path if set (it must
@@ -69,7 +74,7 @@ func (l *Lister) Check(context.Context) error {
 		}
 		return nil
 	}
-	if path, _ := l.tool(); path == "" {
+	if len(l.installed()) == 0 {
 		return fmt.Errorf("RAID controller CLI not found: none of %s in $PATH or %s (install perccli64, or set its path)",
 			strings.Join(Tools, ", "), strings.Join(InstallDirs, ", "))
 	}
@@ -79,7 +84,7 @@ func (l *Lister) Check(context.Context) error {
 // List returns the physical drives, or nil with no error when no CLI is
 // installed.
 func (l *Lister) List(ctx context.Context) ([]Drive, error) {
-	path, name := l.tool()
+	path, name := l.tool(ctx)
 	if path == "" {
 		return nil, nil
 	}
@@ -99,7 +104,7 @@ func (l *Lister) List(ctx context.Context) ([]Drive, error) {
 	if lastErr == nil {
 		lastErr = fmt.Errorf("%s returned no drives", name)
 	}
-	return nil, lastErr
+	return nil, fmt.Errorf("%w%s", lastErr, l.noControllerHint(ctx))
 }
 
 func runCommand(ctx context.Context, path string, args ...string) ([]byte, error) {

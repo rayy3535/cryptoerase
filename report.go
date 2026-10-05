@@ -145,6 +145,10 @@ type Attach struct {
 	// RAIDSlot is the controller slot ("/c0/e64/s1") of a drive that the
 	// RAID reset exposed, or that the controller erased.
 	RAIDSlot string `json:"raid_slot,omitempty"`
+	// DescriptorSense is set when this run set D_SENSE on the disk, so that
+	// the controller returns the drive's ATA registers (descriptor-format
+	// sense data). The setting is not saved, and is not changed back.
+	DescriptorSense bool `json:"descriptor_sense_set,omitempty"`
 }
 
 // NVMeInfo is the controller's erase-relevant identification.

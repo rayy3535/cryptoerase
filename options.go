@@ -41,10 +41,11 @@ import (
 	"github.com/rayy3535/cryptoerase/blockdev"
 	"github.com/rayy3535/cryptoerase/nvme"
 	"github.com/rayy3535/cryptoerase/perc"
+	"github.com/rayy3535/cryptoerase/scsi"
 )
 
 // Version of the library and CLI.
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 // Mode selects what Run does.
 type Mode int
@@ -112,6 +113,12 @@ type Options struct {
 	OpenBlock func(path string, direct, write bool) (blockdev.Device, error)
 	ATA       ata.Backend
 	PERC      PERCLister
+	// DescriptorSense sets D_SENSE in the Control mode page of a SCSI disk,
+	// so the controller returns ATA registers in descriptor-format sense
+	// data, and reports whether it changed the setting. It is used when ATA
+	// pass-through returns no registers (hdparm: "bad/missing sense data").
+	// Nil selects scsi.SetDescriptorSenseOn (SG_IO).
+	DescriptorSense func(dev string) (changed bool, err error)
 
 	// RAIDReset removes the RAID virtual disks that the running OS does not
 	// use and sets their drives to non-RAID (JBOD), so each drive is then
@@ -201,6 +208,9 @@ func (o *Options) withDefaults() (Options, error) {
 	}
 	if v.PERC == nil {
 		v.PERC = &perc.Lister{}
+	}
+	if v.DescriptorSense == nil {
+		v.DescriptorSense = scsi.SetDescriptorSenseOn
 	}
 	return v, nil
 }

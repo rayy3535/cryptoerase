@@ -97,7 +97,7 @@ type Event struct {
 // Events returns the latest n entries of controller c's event log
 // ("/cC show events type=latest=N"), newest first as the CLI prints them.
 func (l *Lister) Events(ctx context.Context, c, n int) ([]Event, error) {
-	path, name := l.tool()
+	path, name := l.tool(ctx)
 	if path == "" {
 		return nil, errors.New("no PERC/MegaRAID CLI installed")
 	}

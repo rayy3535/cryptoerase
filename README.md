@@ -24,7 +24,7 @@ It is a Go library (`github.com/rayy3535/cryptoerase`) with a small command-line
 | Drive | Erase |
 |---|---|
 | NVMe | Sanitize, Crypto Erase. Format NVM with Cryptographic Erase only with `--allow-format` |
-| SATA SSD or HDD, directly attached | ATA SANITIZE CRYPTO SCRAMBLE, if the drive supports it (SSDs and self-encrypting HDDs) |
+| SATA SSD or HDD, directly attached or behind an HBA (AHCI, smartpqi, …) | ATA SANITIZE CRYPTO SCRAMBLE, if the drive supports it (SSDs and self-encrypting HDDs) |
 | SATA or SAS, SSD or HDD, behind a Dell PERC / Broadcom MegaRAID | The controller's cryptographic erase, for drives it reports "Cryptographic Erase Capable" (ISE or SED). With `--raid-reset`, virtual disks are deleted first and their drives erased one by one |
 
 - **Cryptographic erase only, fail closed.** There is no fallback to block erase, overwrite or zero-fill. A drive without a cryptographic erase method is reported `FAIL` or `UNHANDLED`.
@@ -44,7 +44,7 @@ How each of these works, including the RAID reset and the controller erase: [doc
 
 - Linux, amd64 or arm64, as root.
 - `hdparm` 9.56 or later, if SATA drives are present.
-- `perccli64` or `storcli64`, if a PERC/MegaRAID controller is present. It is searched in `$PATH` and `/opt/MegaRAID`, or set with `--raid-cli`.
+- `perccli64` (Dell PERC) or `storcli64` (other MegaRAID), if such a controller is present. They are searched in `$PATH` and `/opt/MegaRAID`, and the first that sees a controller is used; `--raid-cli` sets one.
 
 If a needed tool is missing, the tool exits with code 1 before writing anything. The binary is static, with no other dependencies, and is meant to run from a minimal maintenance OS such as a PXE-booted environment.
 
