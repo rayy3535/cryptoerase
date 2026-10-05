@@ -6,6 +6,8 @@ Combinations on which a full erase passed on real servers: every drive erased, t
 |---|---|---|---|---|
 | None (PCIe, native NVMe) | Dell Ent NVMe v2 AGN MU U.2 6.4TB ×2 | — | NVMe Sanitize, Crypto Erase | 0.1.0-rc.2 |
 | None (PCIe, native NVMe) | Samsung SSD 990 EVO Plus 2TB ×2 (client drive) | — | NVMe Sanitize, Crypto Erase | 0.4.1 |
+| None (directly attached SATA; host controller not recorded) | Micron 5300 MTFDDAK960TDS, SATA SSD 960 GB ×1 | — | ATA SANITIZE CRYPTO SCRAMBLE (hdparm) | 0.4.1 |
+| None (directly attached SATA; same server) | Samsung MZ7LH960HAJR-00005, SATA SSD 960 GB ×1 | — | ATA SANITIZE CRYPTO SCRAMBLE (hdparm) | 0.4.1 |
 | PERC H355 Front (FW 52.30.0-6347) | Samsung MZ7LH960HAJR-00005, SATA SSD 960 GB ×2 | Non-RAID | Controller crypto erase | 0.1.0-rc.3 |
 | PERC H730P Mini (FW 4.300.00-8366) | Samsung MZ7LH480HBHQ0D3, SATA SSD 480 GB ×10 | Non-RAID | Controller crypto erase | 0.4.1 |
 | PERC H730P Mini | Intel SSDSC2KB960G8, SATA SSD 960 GB ×6 | One virtual disk over all six, `--raid-reset` | Controller crypto erase | 0.4.1 |
