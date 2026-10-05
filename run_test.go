@@ -24,7 +24,7 @@ func TestMixedHost(t *testing.T) {
 	sdb := &fakeATADisk{words: ataWords("MOCK SATA SSD", "SATA0002", "FW1", false, false), behaviour: "ok"}
 	h.addSCSI("sda", scsiSpec{vendor: "ATA", driver: "ahci", ata: sda})
 	h.addSCSI("sdb", scsiSpec{vendor: "ATA", driver: "ahci", ata: sdb})
-	h.addSCSI("sdc", scsiSpec{vendor: "ATA", driver: "ahci", rotational: 1})
+	h.addSCSI("sdc", scsiSpec{vendor: "ATA", driver: "ahci", rotational: 1, ata: &fakeATADisk{words: ataWords("EXAMPLE HDD", "HDD1", "F", false, false)}})
 	h.addSCSI("sdd", scsiSpec{vendor: "DELL", model: "PERC H755 Front", driver: "megaraid_sas"})
 	h.addSCSI("sde", scsiSpec{vendor: "Linux", driver: "usb-storage", removable: 1, usb: true})
 	h.addSCSI("sdf", scsiSpec{vendor: "ATA", driver: "ahci", ata: &fakeATADisk{words: ataWords("M", "S", "F", true, false)}})
@@ -62,7 +62,7 @@ func TestMixedHost(t *testing.T) {
 	if d := drive(t, rep, "sdb"); d.Result != Fail || len(sdb.calls) != 0 {
 		t.Errorf("sdb must fail without any sanitize call: %s %v", d.Result, sdb.calls)
 	}
-	if d := drive(t, rep, "sdc"); d.Result != Unhandled || !strings.Contains(d.Reason, "HDD") {
+	if d := drive(t, rep, "sdc"); d.Result != Unhandled || !strings.Contains(d.Reason, "hard disk without a cryptographic erase") {
 		t.Errorf("sdc: %s %s", d.Result, d.Reason)
 	}
 	if d := drive(t, rep, "sdd"); d.Result != Unhandled || d.Attach.Driver != "megaraid_sas" {

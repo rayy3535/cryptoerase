@@ -489,7 +489,9 @@ func TestSATAErrors(t *testing.T) {
 	h.addSCSI("sdd", scsiSpec{vendor: "ATA", driver: "ahci", ata: disk("STUCK")})
 	h.addSCSI("sde", scsiSpec{vendor: "ATA", driver: "ahci", ata: disk("NOTOK")})
 	h.addSCSI("sdf", scsiSpec{vendor: "ATA", driver: "ahci", ata: disk("LOSTSTATUS")})
-	h.addSCSI("sdg", scsiSpec{vendor: "ATA", driver: "ahci", rotational: 1, ata: disk("HDD")})
+	h.addSCSI("sdg", scsiSpec{vendor: "ATA", driver: "ahci", rotational: 1, ata: disk("SEDHDD")}) // self-encrypting HDD
+	h.addSCSI("sdl", scsiSpec{vendor: "ATA", driver: "ahci", rotational: 1,
+		ata: &fakeATADisk{words: ataWords("ST2000DM006-2DM164", "PLAINHDD", "CC26", false, false)}})
 	noCrypto := &fakeATADisk{words: ataWords("EXAMPLE SATA", "NOCRYPTO", "F", false, false)}
 	h.addSCSI("sdh", scsiSpec{vendor: "ATA", driver: "ahci", ata: noCrypto})
 	h.addSCSI("sdi", scsiSpec{vendor: "SEAGATE", model: "ST1200MM0099", driver: "mpt3sas"})
@@ -539,8 +541,11 @@ func TestSATAErrors(t *testing.T) {
 	wantResult(t, rep, "sdd", Fail, "previous sanitize did not finish: progress stalled")
 	wantResult(t, rep, "sde", Fail, "did not report 'Completed Without Error'")
 	wantResult(t, rep, "sdf", Fail, "sanitize status unreadable or stalled: timeout")
-	if d := wantResult(t, rep, "sdg", Unhandled, "rotational HDD"); d.MediaType != "HDD" {
-		t.Errorf("sdg media %q", d.MediaType)
+	if d := wantResult(t, rep, "sdg", Pass, ""); d.MediaType != "HDD (SATA)" || d.TechniqueDetail != "ATA SANITIZE CRYPTO SCRAMBLE EXT" {
+		t.Errorf("sdg %q %q", d.MediaType, d.TechniqueDetail)
+	}
+	if d := wantResult(t, rep, "sdl", Unhandled, "hard disk without a cryptographic erase (no ATA SANITIZE CRYPTO SCRAMBLE support, i.e. not a self-encrypting drive); overwriting is outside this tool's scope"); d.MediaType != "HDD (SATA)" || d.Model != "ST2000DM006-2DM164" || d.Serial != "PLAINHDD" {
+		t.Errorf("sdl %+v", d)
 	}
 	wantResult(t, rep, "sdh", Fail, "no ATA SANITIZE CRYPTO SCRAMBLE support")
 	wantResult(t, rep, "sdi", Unhandled, "not a directly attached ATA device")

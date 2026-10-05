@@ -53,11 +53,13 @@ func (r *runner) scsiDrive(ctx context.Context, name string) *DriveRecord {
 		return r.percPhysical(ctx, rec, name, driver, rotational)
 	case !isATA:
 		return r.done(rec, Unhandled, fmt.Sprintf("not a directly attached ATA device (vendor=%q, model=%q, driver=%s); SAS or other controller, use controller tool", vendor, model, driver))
-	case rotational:
-		rec.MediaType = "HDD"
-		return r.done(rec, Unhandled, "rotational HDD: outside crypto-erase scope, use overwrite")
 	}
 	rec.MediaType = "SSD (SATA)"
+	if rotational {
+		// Hard disks with self-encryption support SANITIZE CRYPTO SCRAMBLE
+		// like SSDs; IDENTIFY tells.
+		rec.MediaType = "HDD (SATA)"
+	}
 	return r.sataDrive(ctx, rec, name, driver)
 }
 
@@ -128,6 +130,10 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 		ctrlNote = "; erase through the controller not possible: " + err.Error()
 	}
 	if !id.SanitizeSupported() || !id.CryptoScrambleSupported() {
+		if rec.MediaType == "HDD (SATA)" {
+			// Most hard disks do not encrypt; erasing them means overwriting.
+			return r.done(rec, Unhandled, "hard disk without a cryptographic erase (no ATA SANITIZE CRYPTO SCRAMBLE support, i.e. not a self-encrypting drive); overwriting is outside this tool's scope"+ctrlNote)
+		}
 		return r.done(rec, Fail, "no ATA SANITIZE CRYPTO SCRAMBLE support"+ctrlNote)
 	}
 	rec.Technique = "Cryptographic Erase"
