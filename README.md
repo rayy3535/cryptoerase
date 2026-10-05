@@ -24,14 +24,15 @@ It is a Go library (`github.com/rayy3535/cryptoerase`) with a small command-line
 | Drive | Erase |
 |---|---|
 | NVMe | Sanitize, Crypto Erase. Format NVM with Cryptographic Erase only with `--allow-format` |
-| SATA SSD, directly attached | ATA SANITIZE CRYPTO SCRAMBLE |
+| SATA SSD or HDD, directly attached | ATA SANITIZE CRYPTO SCRAMBLE, if the drive supports it (SSDs and self-encrypting HDDs) |
 | SATA or SAS, SSD or HDD, behind a Dell PERC / Broadcom MegaRAID | The controller's cryptographic erase, for drives it reports "Cryptographic Erase Capable" (ISE or SED). With `--raid-reset`, virtual disks are deleted first and their drives erased one by one |
 
 - **Cryptographic erase only, fail closed.** There is no fallback to block erase, overwrite or zero-fill. A drive without a cryptographic erase method is reported `FAIL` or `UNHANDLED`.
 - **Nothing is skipped silently.** Drives the tool cannot erase are reported `UNHANDLED` with the reason:
   - RAID virtual disks without `--raid-reset`;
   - drives behind the controller that the OS cannot see;
-  - HDDs and SAS drives without a controller crypto erase;
+  - HDDs without a cryptographic erase (most desktop HDDs);
+  - SAS drives not behind a PERC/MegaRAID controller that can crypto-erase them;
   - disks the running OS uses, and exclusions.
 - **Two checks per drive.** The device's or controller's completion status, plus 16 random markers written before the erase that must all read back changed afterwards.
 - **Evidence.** One JSON record per drive: identity, capabilities, the exact commands, the reported status, and the marker check. The fields follow NIST SP 800-88r2 §4.6.
@@ -104,7 +105,8 @@ The report format is described in [docs/report.md](docs/report.md), with example
 
 ## Not covered
 
-- **Drives without a cryptographic erase:** HDDs and SAS drives that are not behind a PERC/MegaRAID controller, or that the controller does not report crypto-erase capable. Overwriting is out of scope.
+- **Drives without a cryptographic erase:** HDDs that do not encrypt (no ATA SANITIZE CRYPTO SCRAMBLE, and no controller crypto erase); most desktop HDDs are like this. Overwriting is out of scope.
+- **SAS drives on a plain HBA:** SCSI SANITIZE is not implemented; behind a PERC/MegaRAID controller they are erased by the controller.
 - **RAID controllers other than PERC/MegaRAID.**
 - **Locked drives:** TCG Opal drives with a locked range, and ATA drives with a user password. They need a PSID revert or unlock first.
 - **NVMe controllers with no namespace attached:** recreate the namespace layout first.

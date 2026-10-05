@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.0 (2026-10-05)
+
+- Directly attached SATA hard disks are no longer rejected as "rotational HDD: outside crypto-erase scope" without a look. IDENTIFY is read as for SSDs:
+  - an HDD that supports ATA SANITIZE CRYPTO SCRAMBLE (a self-encrypting drive) is erased and verified like an SSD;
+  - an HDD that does not support it is `UNHANDLED`, with "hard disk without a cryptographic erase … overwriting is outside this tool's scope", and its model, serial number and firmware are in the record. Seen on a Seagate ST2000DM006 (BarraCuda).
+
 ## v0.4.1 (2026-10-03)
 
 - Removed the recovery erase added in 0.4.0. It was meant for a drive behind a PERC that rejects writes: erase it once through the controller, then again with markers. On the PERC H730P that erase failed on every blocked drive (`Erase failed … (Error f0)`), and the controller then marked them Unconfigured Bad, so they disappeared from the OS. The one drive that had worked again (sdd) had been writable before its erase, so the premise was wrong.

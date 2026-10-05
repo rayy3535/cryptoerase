@@ -14,7 +14,7 @@
 |---|---|---|
 | NVMe | Sanitize, Crypto Erase action (SANACT=100b) | SANICAP bit 0 |
 | NVMe, only with `--allow-format` | Format NVM, Secure Erase Setting 010b (Cryptographic Erase), keeping the current LBA format, metadata and protection information | FNA bit 2, and no unallocated NVM capacity |
-| SATA SSD, directly attached | ATA SANITIZE CRYPTO SCRAMBLE EXT | IDENTIFY word 59 bits 12 and 13 |
+| SATA SSD or HDD, directly attached | ATA SANITIZE CRYPTO SCRAMBLE EXT | IDENTIFY word 59 bits 12 and 13. An SSD without it is `FAIL`; an HDD without it is `UNHANDLED`, as most HDDs do not encrypt |
 | SATA or SAS, SSD or HDD, behind a Dell PERC / Broadcom MegaRAID | The controller's cryptographic erase (`start erase crypto`) | The controller reports the drive "Cryptographic Erase Capable" (ISE or SED drives) |
 
 There is no fallback to block erase, overwrite, ATA Security Erase or zero-fill. A drive without a cryptographic erase method is reported `FAIL` or `UNHANDLED`, never skipped silently.
