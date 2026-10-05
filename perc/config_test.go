@@ -224,3 +224,40 @@ func TestCheck(t *testing.T) {
 		t.Fatal("real lookup of a missing file passed")
 	}
 }
+
+func TestJBODMode(t *testing.T) {
+	jbod := func(v string) string {
+		return `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success","Description":"None"},"Response Data":{"Controller Properties":[{"Ctrl_Prop":"JBOD","Value":"` + v + `"}]}}]}`
+	}
+	f := &fakeCLI{out: map[string]string{
+		"/call/eall/sall show all J": string(readFixture(t, "synthetic_pd_showall.json")),
+		"/call/vall show all J":      string(readFixture(t, "synthetic_vall_showall.json")),
+		"/c0 show jbod J":            jbod("OFF"),
+		"/c0 set jbod=on J":          `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success","Description":"None"}}]}`,
+	}}
+	ctx := context.Background()
+	ctrls, err := f.lister().Controllers(ctx)
+	if err != nil || ctrls[0].JBOD != "OFF" {
+		t.Fatalf("%v %+v", err, ctrls)
+	}
+	if cmd, err := f.lister().EnableJBOD(ctx, 0); err != nil || cmd != "perccli64 /c0 set jbod=on" {
+		t.Fatalf("%q %v", cmd, err)
+	}
+	f.out["/c0 show jbod J"] = jbod(" on ")
+	if m, err := f.lister().JBODMode(ctx, 0); err != nil || m != "ON" {
+		t.Fatalf("%q %v", m, err)
+	}
+	// Not reported: unknown, and Controllers still succeeds.
+	for _, out := range []string{
+		`{"Controllers":[{"Command Status":{"Controller":0,"Status":"Failure","Description":"Un-supported command"}}]}`,
+		`{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success"},"Response Data":{"Controller Properties":[{"Ctrl_Prop":"JBOD","Value":"maybe"}]}}]}`,
+	} {
+		f.out["/c0 show jbod J"] = out
+		if m, err := f.lister().JBODMode(ctx, 0); err == nil || m != "" {
+			t.Errorf("%s: %q %v", out, m, err)
+		}
+		if ctrls, err := f.lister().Controllers(ctx); err != nil || ctrls[0].JBOD != "" {
+			t.Errorf("Controllers: %v %+v", err, ctrls)
+		}
+	}
+}

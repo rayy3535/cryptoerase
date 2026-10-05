@@ -38,6 +38,11 @@ type Controller struct {
 	Tool   string        `json:"tool"`
 	VDs    []VirtualDisk `json:"virtual_disks,omitempty"`
 	Drives []Drive       `json:"drives,omitempty"`
+	// JBOD is the controller's JBOD mode ("/cN show jbod"): "ON", "OFF", or
+	// empty when the controller does not report it. With JBOD off, drives
+	// cannot be set to JBOD (non-RAID); Broadcom-branded and OEM controllers
+	// ship with it off.
+	JBOD string `json:"jbod,omitempty"`
 }
 
 // Path returns the CLI object path of a drive slot on controller c:
@@ -116,7 +121,64 @@ func (l *Lister) Controllers(ctx context.Context) ([]Controller, error) {
 	if err != nil && len(vdOut) == 0 {
 		return nil, fmt.Errorf("%s: list virtual disks: %w", name, err)
 	}
-	return ParseConfig(pdOut, vdOut, name)
+	ctrls, err := ParseConfig(pdOut, vdOut, name)
+	if err != nil {
+		return nil, err
+	}
+	for i := range ctrls {
+		// Not every controller reports it; unknown is left empty.
+		ctrls[i].JBOD, _ = l.JBODMode(ctx, ctrls[i].Index)
+	}
+	return ctrls, nil
+}
+
+// JBODMode returns controller c's JBOD mode, "ON" or "OFF" ("/cC show
+// jbod").
+func (l *Lister) JBODMode(ctx context.Context, c int) (string, error) {
+	_, doc, err := l.doJSON(ctx, fmt.Sprintf("/c%d", c), "show", "jbod")
+	if err != nil {
+		return "", err
+	}
+	return ParseJBODMode(doc)
+}
+
+// ParseJBODMode finds {"Ctrl_Prop": "JBOD", "Value": "OFF"} in the response
+// of "show jbod".
+func ParseJBODMode(doc *jsonDoc) (string, error) {
+	var mode string
+	for _, c := range doc.Controllers {
+		walkMaps(c.ResponseData, func(m map[string]any) {
+			if p, _ := str(m["Ctrl_Prop"]); strings.EqualFold(strings.TrimSpace(p), "JBOD") {
+				v, _ := str(m["Value"])
+				mode = strings.ToUpper(strings.TrimSpace(v))
+			}
+		})
+	}
+	if mode != "ON" && mode != "OFF" {
+		return "", fmt.Errorf("no JBOD mode in the output (%q)", mode)
+	}
+	return mode, nil
+}
+
+// walkMaps calls fn for every object in v, at any depth.
+func walkMaps(v any, fn func(map[string]any)) {
+	switch x := v.(type) {
+	case map[string]any:
+		fn(x)
+		for _, c := range x {
+			walkMaps(c, fn)
+		}
+	case []any:
+		for _, c := range x {
+			walkMaps(c, fn)
+		}
+	}
+}
+
+// EnableJBOD turns on controller c's JBOD mode ("/cC set jbod=on"), which
+// SetJBOD needs.
+func (l *Lister) EnableJBOD(ctx context.Context, c int) (string, error) {
+	return l.do(ctx, fmt.Sprintf("/c%d", c), "set", "jbod=on")
 }
 
 // ParseConfig combines "/call/eall/sall show all J" and

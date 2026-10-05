@@ -23,6 +23,11 @@ type RAIDResetter interface {
 	SetJBOD(ctx context.Context, c int, slot string) (string, error)
 }
 
+// jbodEnabler turns on a controller's JBOD mode. *perc.Lister implements it.
+type jbodEnabler interface {
+	EnableJBOD(ctx context.Context, c int) (string, error)
+}
+
 // RAIDReset records what Options.RAIDReset did, or in inventory mode would
 // do, on one controller. Controller is -1 for problems that concern no
 // particular controller (no CLI installed, listing failed).
@@ -36,6 +41,9 @@ type RAIDReset struct {
 	KeepVDs   []perc.VirtualDisk `json:"keep_virtual_disks,omitempty"`
 	// Expose are the drives set to non-RAID so the OS sees them directly.
 	Expose []perc.Drive `json:"expose_drives,omitempty"`
+	// EnableJBOD is set when the controller's JBOD mode is off, so it is
+	// turned on before drives are set to JBOD.
+	EnableJBOD bool `json:"enable_jbod,omitempty"`
 	// Commands were run in erase mode, or would be run in inventory mode.
 	Commands []string `json:"commands,omitempty"`
 	Executed bool     `json:"executed"`
@@ -155,11 +163,21 @@ func (r *runner) planRAID(c perc.Controller, megaraidInUse bool) *RAIDReset {
 		}
 		return rr
 	}
+	if len(rr.Expose) > 0 && strings.EqualFold(c.JBOD, "OFF") {
+		if _, ok := r.opts.PERC.(jbodEnabler); !ok {
+			rr.Skipped = "JBOD mode is off on the controller, and the RAID backend cannot turn it on"
+			return rr
+		}
+		rr.EnableJBOD = true
+	}
 	for _, d := range rr.hotSpares {
 		rr.Commands = append(rr.Commands, fmt.Sprintf("%s %s delete hotsparedrive", c.Tool, perc.Path(c.Index, d.Slot)))
 	}
 	for _, vd := range rr.DeleteVDs {
 		rr.Commands = append(rr.Commands, fmt.Sprintf("%s /c%d/v%d delete force", c.Tool, c.Index, vd.VD))
+	}
+	if rr.EnableJBOD {
+		rr.Commands = append(rr.Commands, fmt.Sprintf("%s /c%d set jbod=on", c.Tool, c.Index))
 	}
 	for _, d := range rr.Expose {
 		rr.Commands = append(rr.Commands, fmt.Sprintf("%s %s set jbod", c.Tool, perc.Path(c.Index, d.Slot)))
@@ -194,13 +212,47 @@ func (r *runner) applyRAID(ctx context.Context, rs RAIDResetter, rr *RAIDReset) 
 			return exposed
 		}
 	}
+	already := map[string]bool{}
+	if rr.EnableJBOD {
+		en, _ := rs.(jbodEnabler) // planRAID checked
+		if !step(en.EnableJBOD(ctx, rr.Controller)) {
+			return exposed
+		}
+		// Some firmware turns every unconfigured drive into JBOD by itself
+		// when JBOD mode goes on; "set jbod" would then be refused.
+		already = r.jbodDrives(ctx, rs, rr.Controller)
+	}
 	for _, d := range rr.Expose {
-		if !step(rs.SetJBOD(ctx, rr.Controller, d.Slot)) {
+		if already[d.Slot] {
+			r.log.Info("raid reset", "controller", rr.Controller, "drive", d.Slot, "detail", "JBOD since JBOD mode was turned on")
+		} else if !step(rs.SetJBOD(ctx, rr.Controller, d.Slot)) {
 			return exposed
 		}
 		exposed[d.Slot] = true
 	}
 	return exposed
+}
+
+// jbodDrives returns the slots of controller c's drives that are in state
+// JBOD now; none if the configuration cannot be read.
+func (r *runner) jbodDrives(ctx context.Context, rs RAIDResetter, c int) map[string]bool {
+	out := map[string]bool{}
+	ctrls, err := rs.Controllers(ctx)
+	if err != nil {
+		r.log.Warn("raid reset", "controller", c, "detail", "re-reading drive states", "error", err)
+		return out
+	}
+	for _, ctrl := range ctrls {
+		if ctrl.Index != c {
+			continue
+		}
+		for _, d := range ctrl.Drives {
+			if strings.EqualFold(strings.TrimSpace(d.State), "JBOD") {
+				out[d.Slot] = true
+			}
+		}
+	}
+	return out
 }
 
 // waitExposed waits until every exposed drive shows up as a block device,

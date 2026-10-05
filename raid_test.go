@@ -36,6 +36,9 @@ type fakeRAID struct {
 	onEvents  func()            // called on every Events
 	onErase   func(slot string) // called when an erase starts
 	ctrlCalls int
+
+	// autoJBOD: turning JBOD mode on sets every UGood drive to JBOD.
+	autoJBOD bool
 }
 
 func (f *fakeRAID) List(context.Context) ([]perc.Drive, error) {
@@ -107,6 +110,33 @@ func (f *fakeRAID) SetJBOD(_ context.Context, c int, slot string) (string, error
 		f.setState(slot, "JBOD")
 		if expose := f.jbod[slot]; expose != nil {
 			expose()
+		}
+	})
+}
+
+func (f *fakeRAID) EnableJBOD(_ context.Context, c int) (string, error) {
+	return f.run(fmt.Sprintf("perccli64 /c%d set jbod=on", c), func() {
+		f.mu.Lock()
+		var ugood []string
+		for i := range f.ctrls {
+			if f.ctrls[i].Index == c {
+				f.ctrls[i].JBOD = "ON"
+				for _, d := range f.ctrls[i].Drives {
+					if d.State == "UGood" {
+						ugood = append(ugood, d.Slot)
+					}
+				}
+			}
+		}
+		f.mu.Unlock()
+		if !f.autoJBOD {
+			return
+		}
+		for _, slot := range ugood {
+			f.setState(slot, "JBOD")
+			if expose := f.jbod[slot]; expose != nil {
+				expose()
+			}
 		}
 	})
 }
@@ -384,5 +414,100 @@ func TestWWIDMatching(t *testing.T) {
 		if got := wwidMatches(wwid, d); got != want {
 			t.Errorf("%q: %v", wwid, got)
 		}
+	}
+}
+
+// jbodOffHost is raidHost with JBOD mode off on the controller (Broadcom-
+// branded and OEM controllers ship so): both drives are Ready, no virtual
+// disk.
+func jbodOffHost(t *testing.T) (*testHost, *fakeRAID) {
+	h, f := raidHost(t)
+	h.removeSCSI("sda")
+	f.ctrls[0].VDs, f.vdDisk = nil, nil
+	f.ctrls[0].JBOD = "OFF"
+	for i := range f.ctrls[0].Drives {
+		f.ctrls[0].Drives[i].State, f.ctrls[0].Drives[i].DG = "UGood", "-"
+	}
+	return h, f
+}
+
+func TestRAIDResetEnablesJBOD(t *testing.T) {
+	for _, auto := range []bool{false, true} {
+		h, f := jbodOffHost(t)
+		f.autoJBOD = auto
+		rep := h.run(raidOptions(h, f, ModeErase))
+		want := []string{"perccli64 /c0 set jbod=on", "perccli64 /c0/e64/s0 set jbod", "perccli64 /c0/e64/s1 set jbod"}
+		if auto {
+			want = want[:1] // the drives turned JBOD by themselves
+		}
+		if strings.Join(f.calls, "|") != strings.Join(want, "|") {
+			t.Fatalf("auto %v: calls %v", auto, f.calls)
+		}
+		rr := rep.RAIDReset[0]
+		if !rr.EnableJBOD || rr.Error != "" || strings.Join(rr.Commands, "|") != strings.Join(want, "|") {
+			t.Errorf("auto %v: raid reset %+v", auto, rr)
+		}
+		wantResult(t, rep, "sdb", Pass, "")
+		wantResult(t, rep, "sdc", Pass, "")
+	}
+}
+
+func TestRAIDResetEnableJBODPlanned(t *testing.T) {
+	h, f := jbodOffHost(t)
+	rep := h.run(raidOptions(h, f, ModeInventory))
+	if len(f.calls) != 0 {
+		t.Fatalf("inventory changed the controller: %v", f.calls)
+	}
+	rr := rep.RAIDReset[0]
+	want := "perccli64 /c0 set jbod=on|perccli64 /c0/e64/s0 set jbod|perccli64 /c0/e64/s1 set jbod"
+	if !rr.EnableJBOD || strings.Join(rr.Commands, "|") != want {
+		t.Fatalf("plan %+v", rr)
+	}
+	wantResult(t, rep, "s0", Planned, "the RAID reset sets it to non-RAID")
+
+	// JBOD mode already on, or not reported: nothing to turn on.
+	for _, mode := range []string{"ON", ""} {
+		h, f := jbodOffHost(t)
+		f.ctrls[0].JBOD = mode
+		if rr := h.run(raidOptions(h, f, ModeInventory)).RAIDReset[0]; rr.EnableJBOD || strings.Contains(strings.Join(rr.Commands, "|"), "jbod=on") {
+			t.Errorf("JBOD %q: plan %+v", mode, rr)
+		}
+	}
+}
+
+func TestRAIDResetEnableJBODFails(t *testing.T) {
+	h, f := jbodOffHost(t)
+	f.fail["perccli64 /c0 set jbod=on"] = errors.New("perccli64 /c0 set jbod=on: Failure command invalid")
+	rep := h.run(raidOptions(h, f, ModeErase))
+	if rr := rep.RAIDReset[0]; !strings.Contains(rr.Error, "set jbod=on: Failure") || len(f.calls) != 1 {
+		t.Fatalf("%+v calls %v", rr, f.calls)
+	}
+	wantResult(t, rep, "s0", Fail, "set jbod=on: Failure command invalid")
+}
+
+// plainRAID is a backend that can reset RAID but not turn on JBOD mode.
+type plainRAID struct{ f *fakeRAID }
+
+func (p plainRAID) List(ctx context.Context) ([]perc.Drive, error) { return p.f.List(ctx) }
+func (p plainRAID) Controllers(ctx context.Context) ([]perc.Controller, error) {
+	return p.f.Controllers(ctx)
+}
+func (p plainRAID) DeleteVD(ctx context.Context, c, vd int) (string, error) {
+	return p.f.DeleteVD(ctx, c, vd)
+}
+func (p plainRAID) DeleteHotSpare(ctx context.Context, c int, slot string) (string, error) {
+	return p.f.DeleteHotSpare(ctx, c, slot)
+}
+func (p plainRAID) SetJBOD(ctx context.Context, c int, slot string) (string, error) {
+	return p.f.SetJBOD(ctx, c, slot)
+}
+
+func TestRAIDResetJBODOffWithoutEnabler(t *testing.T) {
+	h, f := jbodOffHost(t)
+	o := raidOptions(h, f, ModeErase)
+	o.PERC = plainRAID{f}
+	rep := h.run(o)
+	if rr := rep.RAIDReset[0]; rr.Skipped != "JBOD mode is off on the controller, and the RAID backend cannot turn it on" || len(f.calls) != 0 {
+		t.Fatalf("%+v calls %v", rr, f.calls)
 	}
 }

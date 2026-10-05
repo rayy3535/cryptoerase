@@ -15,7 +15,7 @@
 | `started_at`, `finished_at` | UTC |
 | `result` | `PASS`, `FAIL` or `INCOMPLETE`. These map to exit codes 0, 1 and 2 |
 | `counts` | Number of drives per result |
-| `raid_reset` | With `--raid-reset`: per controller, the virtual disks deleted and kept, the drives exposed, the commands run (or planned), `executed`, and `skipped` or `error` |
+| `raid_reset` | With `--raid-reset`: per controller, the virtual disks deleted and kept, the drives exposed, `enable_jbod` when the controller's JBOD mode was off and is turned on, the commands run (or planned), `executed`, and `skipped` or `error` |
 | `drives` | One record per drive. See below |
 
 ## Drive record

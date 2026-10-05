@@ -73,7 +73,7 @@ cryptoerase --yes --raid-reset           # also delete RAID virtual disks and er
 |---|---|
 | `--inventory` | Detect and plan only |
 | `--yes` | Required to erase |
-| `--raid-reset` | PERC/MegaRAID: delete the virtual disks the running OS does not use, set their drives and any drives in state Ready to non-RAID, then erase each drive |
+| `--raid-reset` | PERC/MegaRAID: delete the virtual disks the running OS does not use, set their drives and any drives in state Ready to non-RAID (turning the controller's JBOD mode on if it is off), then erase each drive |
 | `--allow-format` | NVMe: accept Format NVM with Cryptographic Erase on controllers without Sanitize Crypto Erase. Format covers less than Sanitize; see [docs/background.md](docs/background.md) |
 | `--exclude DEV` | Never touch `DEV` (`sda`, `/dev/sda`, `nvme0`). Repeatable |
 | `--report FILE` | Report path. Default `./cryptoerase-<serial>-<UTC>.json` |
