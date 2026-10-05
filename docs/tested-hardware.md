@@ -8,12 +8,13 @@ Combinations on which a full erase passed on real servers: every drive erased, t
 | None (PCIe, native NVMe) | Samsung SSD 990 EVO Plus 2TB ×2 (client drive) | — | NVMe Sanitize, Crypto Erase | 0.4.1 |
 | None (directly attached SATA; host controller not recorded) | Micron 5300 MTFDDAK960TDS, SATA SSD 960 GB ×1 | — | ATA SANITIZE CRYPTO SCRAMBLE (hdparm) | 0.4.1 |
 | None (directly attached SATA; same server) | Samsung MZ7LH960HAJR-00005, SATA SSD 960 GB ×1 | — | ATA SANITIZE CRYPTO SCRAMBLE (hdparm) | 0.4.1 |
+| smartpqi (Microchip SmartHBA / SmartRAID, model not recorded), Inspur server | Samsung MZ7LH960HAJR-00005, SATA SSD 960 GB ×6 | Passed through to the OS | ATA SANITIZE CRYPTO SCRAMBLE (hdparm), after the tool set D_SENSE | 0.6.0 |
 | PERC H355 Front (FW 52.30.0-6347) | Samsung MZ7LH960HAJR-00005, SATA SSD 960 GB ×2 | Non-RAID | Controller crypto erase | 0.1.0-rc.3 |
 | PERC H730P Mini (FW 4.300.00-8366) | Samsung MZ7LH480HBHQ0D3, SATA SSD 480 GB ×10 | Non-RAID | Controller crypto erase | 0.4.1 |
 | PERC H730P Mini | Intel SSDSC2KB960G8, SATA SSD 960 GB ×6 | One virtual disk over all six, `--raid-reset` | Controller crypto erase | 0.4.1 |
 | PERC (model not recorded) | Seagate ST1200MM0099, SAS HDD 1.2 TB ×2 | Non-RAID, after `--raid-reset` from RAID1 | Controller crypto erase | 0.4.1 |
 
-The PERC H355 machine was a PowerEdge R7525, with the NVMe drives and the H355 in the same server. Per drive, the controller erase took about 1–3 s on SSDs and 6–9 s on the SAS hard disks, mostly for the markers. On the server with the 990 EVO Plus drives, the BMC's virtual media (`Virtual HDisk0` and others) was reported `SKIPPED`, as intended.
+The PERC H355 machine was a PowerEdge R7525, with the NVMe drives and the H355 in the same server. Per drive, the controller erase took about 1–3 s on SSDs and 6–9 s on the SAS hard disks, mostly for the markers. On the server with the 990 EVO Plus drives, the BMC's virtual media (`Virtual HDisk0` and others) was reported `SKIPPED`, as intended. On the smartpqi server, every drive failed with 0.5.0 (no ATA registers returned). With 0.6.0 the tool set D_SENSE on five of them; the sixth had been set by hand with `sdparm` beforehand. Each erase took 1–10 s.
 
 ## Controller behaviour seen
 
