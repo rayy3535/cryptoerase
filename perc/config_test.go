@@ -165,7 +165,7 @@ func TestConfigCommands(t *testing.T) {
 
 func TestToolLookup(t *testing.T) {
 	// An explicit path is used as given.
-	if p, n := (&Lister{Path: "/srv/bin/storcli64"}).tool(); p != "/srv/bin/storcli64" || n != "storcli64" {
+	if p, n := (&Lister{Path: "/srv/bin/storcli64"}).tool(context.Background()); p != "/srv/bin/storcli64" || n != "storcli64" {
 		t.Fatalf("explicit: %q %q", p, n)
 	}
 	// $PATH first, in Tools order.
@@ -175,7 +175,7 @@ func TestToolLookup(t *testing.T) {
 		}
 		return "", errors.New("not found")
 	}}
-	if p, n := inPath.tool(); p != "/usr/sbin/storcli64" || n != "storcli64" {
+	if p, n := inPath.tool(context.Background()); p != "/usr/sbin/storcli64" || n != "storcli64" {
 		t.Fatalf("PATH: %q %q", p, n)
 	}
 	// Then the package install directories.
@@ -187,7 +187,7 @@ func TestToolLookup(t *testing.T) {
 		}
 		return "", errors.New("not found")
 	}}
-	if p, n := opt.tool(); p != "/opt/MegaRAID/storcli/storcli64" || n != "storcli64" {
+	if p, n := opt.tool(context.Background()); p != "/opt/MegaRAID/storcli/storcli64" || n != "storcli64" {
 		t.Fatalf("install dir: %q %q (tried %v)", p, n, tried)
 	}
 	if tried[4] != "/opt/MegaRAID/perccli/perccli64" {

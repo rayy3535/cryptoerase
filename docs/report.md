@@ -33,6 +33,7 @@
 | `health` | NVMe SMART: critical warning, available spare, percentage used |
 | `perc` | Physical drives behind a RAID virtual disk, if a controller CLI is installed |
 | `attach.raid_slot` | Controller slot (`/c0/e64/s1`) of a drive exposed by `--raid-reset` or erased by the controller |
+| `attach.descriptor_sense_set` | `true` when the run set D_SENSE on the disk, because the controller returned no ATA registers in fixed-format sense data (smartpqi) |
 | `firmware_policy` | `pass`, `fail` or `no_rule`, with the matching rule |
 | `nist_method`, `technique`, `technique_detail`, `scope`, `command` | How the drive was erased |
 | `planned` | Inventory mode only: the method that would be used |

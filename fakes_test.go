@@ -203,9 +203,10 @@ func (h *testHost) options(mode Mode) Options {
 			}
 			return nil, fmt.Errorf("no such controller %s", p)
 		},
-		NamespaceID: func(string) (uint32, error) { return 0, errors.New("unexpected ioctl") },
-		ATA:         h.ata,
-		PERC:        h.perc,
+		NamespaceID:     func(string) (uint32, error) { return 0, errors.New("unexpected ioctl") },
+		ATA:             h.ata,
+		PERC:            h.perc,
+		DescriptorSense: h.ata.setDescriptorSense,
 	}
 }
 
@@ -406,8 +407,12 @@ type fakeATADisk struct {
 	host      *testHost
 	path      string
 	words     []uint16
-	behaviour string // ok | reject | noop | noregs (status) | noregs-scramble
+	behaviour string // ok | reject | noop | noregs (status) | noregs-scramble | fixedsense
 	frozen    bool
+	// fixedsense: the controller returns no ATA registers until D_SENSE is
+	// set (smartpqi); resetDSense clears it again after the sanitize.
+	dsense      bool
+	resetDSense bool
 
 	mu      sync.Mutex
 	pending int
@@ -483,7 +488,7 @@ func (a *fakeATA) SanitizeStatus(ctx context.Context, dev string) (*ata.Sanitize
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.calls = append(d.calls, "status")
-	if d.behaviour == "noregs" {
+	if d.behaviour == "noregs" || (d.behaviour == "fixedsense" && !d.dsense) {
 		return nil, &ata.HdparmError{Args: []string{"--sanitize-status", dev}, Err: ata.ErrNoRegisters, Stderr: percSense}
 	}
 	if d.frozen {
@@ -514,8 +519,30 @@ func (a *fakeATA) SanitizeCryptoScramble(ctx context.Context, dev string) error 
 	default:
 		fill(d.host.t, d.path, false)
 		d.lastOK, d.pending = true, 2
+		if d.resetDSense {
+			d.dsense = false
+		}
 	}
 	return nil
+}
+
+// setDescriptorSense answers MODE SENSE/SELECT of the Control page: a
+// fixedsense controller supports it, as does one with D_SENSE already set;
+// others reject the page.
+func (a *fakeATA) setDescriptorSense(dev string) (bool, error) {
+	d, err := a.disk(dev)
+	if err != nil {
+		return false, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls = append(d.calls, "dsense")
+	if d.behaviour != "fixedsense" && !d.dsense {
+		return false, errors.New("MODE SENSE(10), Control page: check condition: sense key 0x5, ASC/ASCQ 24/00")
+	}
+	changed := !d.dsense
+	d.dsense = true
+	return changed, nil
 }
 
 func (a *fakeATA) Version(ctx context.Context) string { return "hdparm v9.65 (fake)" }

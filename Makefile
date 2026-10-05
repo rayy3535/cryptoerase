@@ -12,7 +12,7 @@ FUZZ_TARGETS := \
 	.:FuzzCompareVersions .:FuzzParseFirmwarePolicy .:FuzzSampleOffsets \
 	./ata:FuzzParseIstdout ./ata:FuzzParseIdentify ./ata:FuzzParseSanitizeStatus \
 	./nvme:FuzzParsers ./nvme:FuzzFormatSpecCDW10 \
-	./tcg:FuzzParseLevel0 ./perc:FuzzParse ./perc:FuzzParseEvents
+	./tcg:FuzzParseLevel0 ./perc:FuzzParse ./perc:FuzzParseEvents ./scsi:FuzzControlPage
 
 .PHONY: all build test vet fmt-check tidy-check golangci vulncheck actionlint lint cover fuzz integration release examples clean
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.0 (2026-10-05)
+
+- **SATA drives behind smartpqi** (Microchip SmartHBA / SmartRAID, seen on an Inspur server with Samsung PM883 drives). The controller passes ATA commands through, but returns the drive's registers in fixed-format sense data, which hdparm does not read (`bad/missing sense data`), so every drive failed with "does not return the drive's status". When that happens, the tool now sets D_SENSE in the disk's Control mode page through SG_IO, so the controller returns descriptor-format sense, and reads the status again. The record shows `attach.descriptor_sense_set`. This is done in `--inventory` too: it changes only the format of error reports, is not saved, and is not changed back. If D_SENSE cannot be set, or is set already, the drive fails as before, and the reason says what was tried.
+- **Choice of controller CLI.** perccli64 manages Dell PERC controllers only. On a server with a Broadcom-branded or OEM MegaRAID controller (seen: LSI SAS3108 on Inspur) it found no controller, and the report read `perccli64: list physical drives: %!w(<nil>)`. With several CLIs installed, the tool now uses the first that sees a controller (`show ctrlcount`); an explicit `--raid-cli` is used as given. When the CLI lists no drives, the error gives the CLI's own status, and says if it sees no controller at all.
+
 ## v0.5.0 (2026-10-05)
 
 - Directly attached SATA hard disks are no longer rejected as "rotational HDD: outside crypto-erase scope" without a look. IDENTIFY is read as for SSDs:

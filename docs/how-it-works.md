@@ -43,9 +43,10 @@ The write handle used for the markers stays open until the erase command has fin
   - Format NVM
   - Security Receive, for TCG Level 0 Discovery: whether the drive reports media encryption, and whether a locking range is locked.
 - **SATA:** through [hdparm](https://sourceforge.net/projects/hdparm/) (9.56 or later), behind the `ata.Backend` interface. hdparm handles SCSI/ATA Translation and sense-data formats across kernels and HBAs.
-  - When hdparm gets no ATA registers back (`bad/missing sense data`), the outcome of a command cannot be read. The tool then treats it as not done.
+  - When hdparm gets no ATA registers back (`bad/missing sense data`), the controller may be using fixed-format sense data, which has no room for all the registers. The tool then sets D_SENSE in the disk's Control mode page (MODE SENSE / MODE SELECT through SG_IO, not saved), so the controller uses descriptor format, and asks again. This made SATA drives behind smartpqi readable. If the registers still do not come back, the outcome of a command cannot be read, and the tool treats it as not done.
   - SANITIZE STATUS EXT (read-only) runs before anything is written, in `--inventory` too.
 - **Dell PERC / Broadcom MegaRAID:** through `perccli64`, `perccli`, `storcli64` or `storcli`, using JSON output. The exception is the event log, which the CLI prints as text even when asked for JSON.
+  - perccli manages Dell PERC controllers only; Broadcom-branded and OEM controllers (Inspur, Supermicro, Lenovo, …) need storcli. With several installed, the tool uses the first that sees a controller (`show ctrlcount`). `--raid-cli` overrides the search.
 
 ## Required tools
 

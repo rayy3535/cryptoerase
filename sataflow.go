@@ -142,6 +142,9 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 	// SANITIZE STATUS EXT changes nothing, so it runs in inventory mode too:
 	// it shows whether the outcome of a sanitize can be read back at all.
 	st, err := r.opts.ATA.SanitizeStatus(ctx, dev)
+	if errors.Is(err, ata.ErrNoRegisters) {
+		st, err = r.descriptorSense(ctx, rec, dev, err)
+	}
 	if err != nil {
 		if errors.Is(err, ata.ErrNoRegisters) {
 			return r.done(rec, Fail, fmt.Sprintf("the %s controller passes ATA commands through but does not return the drive's status, so a sanitize cannot be confirmed; not erased (%v)%s", driver, err, ctrlNote))
@@ -217,6 +220,33 @@ func (r *runner) sataDrive(ctx context.Context, rec *DriveRecord, name, driver s
 	return r.done(rec, res, reason)
 }
 
+// descriptorSense handles a SANITIZE STATUS EXT that returned no ATA
+// registers. Some controllers (seen: smartpqi) report the registers in
+// fixed-format sense data, which has no room for all of them and which
+// hdparm does not read. With D_SENSE set they use descriptor format. The
+// setting changes only the format of error reports, so it is made in
+// inventory mode too. It returns the status read again after the change,
+// or err with what was tried.
+func (r *runner) descriptorSense(ctx context.Context, rec *DriveRecord, dev string, err error) (*ata.SanitizeStatus, error) {
+	changed, derr := r.opts.DescriptorSense(dev)
+	switch {
+	case derr != nil:
+		return nil, fmt.Errorf("%w; setting D_SENSE (descriptor-format sense data) failed: %w", err, derr)
+	case !changed:
+		return nil, fmt.Errorf("%w; D_SENSE (descriptor-format sense data) is already set", err)
+	}
+	if rec.Attach == nil {
+		rec.Attach = &Attach{}
+	}
+	rec.Attach.DescriptorSense = true
+	r.log.Info("descriptor sense", "device", dev, "detail", "ATA registers missing from fixed-format sense data; set D_SENSE")
+	st, err := r.opts.ATA.SanitizeStatus(ctx, dev)
+	if err != nil {
+		return nil, fmt.Errorf("%w (after setting D_SENSE)", err)
+	}
+	return st, nil
+}
+
 // waitATASanitize polls SANITIZE STATUS EXT until no operation is in
 // progress.
 func (r *runner) waitATASanitize(ctx context.Context, dev string) (*ata.SanitizeStatus, error) {
@@ -226,6 +256,10 @@ func (r *runner) waitATASanitize(ctx context.Context, dev string) (*ata.Sanitize
 	for {
 		st, err := r.opts.ATA.SanitizeStatus(ctx, dev)
 		if err != nil {
+			if errors.Is(err, ata.ErrNoRegisters) {
+				// A reset of the device may have cleared D_SENSE.
+				_, _ = r.opts.DescriptorSense(dev)
+			}
 			errs++
 			if errs > 3 {
 				return last, err
