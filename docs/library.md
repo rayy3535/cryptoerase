@@ -4,7 +4,7 @@ The package is `github.com/rayy3535/cryptoerase`; API documentation is on [pkg.g
 
 A complete program that plans and then erases with the RAID reset is in [examples/library/main.go](../examples/library/main.go); the README walks through it.
 
-Every backend in `Options` can be replaced:
+The library needs the same programs on the server as the command-line tool (hdparm, perccli64 or storcli64; see [dependencies.md](dependencies.md)). Every backend in `Options` can be replaced:
 
 | Option | Default |
 |---|---|

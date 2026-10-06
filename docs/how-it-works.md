@@ -54,7 +54,7 @@ Before anything is written, the tool checks that it has what this host needs:
 - hdparm, when SATA drives are present;
 - the controller CLI, when a PERC/MegaRAID controller is present or `--raid-reset` is given.
 
-Excluded, in-use, removable and USB disks do not count. If a tool is missing, the run stops with exit code 1, naming the tool and the disk that needs it, and writes no report.
+Excluded, in-use, removable and USB disks do not count. If a tool is missing, the run stops with exit code 1, naming the tool and the disk that needs it, and writes no report. Where to get each tool and every command it is asked to run: [dependencies.md](dependencies.md).
 
 ## RAID controllers
 

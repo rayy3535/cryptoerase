@@ -23,6 +23,8 @@ Cryptographic erase for every drive in a Linux server, with a JSON evidence repo
 go get github.com/rayy3535/cryptoerase@latest
 ```
 
+The program runs as root, and needs `hdparm` for SATA drives and `perccli64`/`storcli64` for PERC/MegaRAID controllers on the server: see [Dependencies](#dependencies).
+
 Plan first, with the RAID reset (`--inventory --raid-reset`), then erase (`--yes --raid-reset`):
 
 ```go
@@ -119,13 +121,23 @@ esac
 
 Optional provenance check: `gh attestation verify cryptoerase-linux-amd64 --repo rayy3535/cryptoerase` ([SLSA](https://slsa.dev/spec/v1.0/provenance)). From source: `go install github.com/rayy3535/cryptoerase/cmd/cryptoerase@latest`.
 
-## Requirements
+## Dependencies
 
-- Linux, amd64 or arm64, as root.
-- `hdparm` 9.56 or later, if SATA drives are present.
-- `perccli64` (Dell PERC) or `storcli64` (other MegaRAID), if such a controller is present. Searched in `$PATH` and `/opt/MegaRAID`.
+A static binary; on the server it needs root and, depending on the drives, up to two programs:
 
-A missing tool stops the run before anything is changed (exit code 1). The binary is static.
+| Program | Needed when | Get it | Found via |
+|---|---|---|---|
+| `hdparm` 9.56+ | SATA drives are present, or `--raid-reset` | `apt install hdparm` / `dnf install hdparm` | `$PATH`, or `--hdparm PATH` |
+| `perccli64` | Dell PERC controller | Dell support site, "PERC CLI" | `$PATH`, `/opt/MegaRAID/perccli`, or `--raid-cli PATH` |
+| `storcli64` | Broadcom, LSI or OEM MegaRAID controller (perccli does not see these) | Broadcom support site, "StorCLI" | `$PATH`, `/opt/MegaRAID/storcli`, or `--raid-cli PATH` |
+
+- NVMe drives need neither program: the tool talks to them through the kernel. SATA drives on AHCI or an HBA such as smartpqi need only hdparm.
+- `--raid-reset` needs hdparm and a controller CLI, since the drives it exposes are not visible beforehand.
+- A missing program stops the run before anything is changed: exit code 1, no report, and the message names the program and the disk that needs it.
+- Not needed: nvme-cli, sg3_utils, sdparm, smartmontools, sedutil-cli, MegaCli, arcconf.
+- Linux on amd64 or arm64, with `/sys` and `/proc` mounted.
+
+Every command it runs, and the kernel interfaces it uses: [docs/dependencies.md](docs/dependencies.md).
 
 ## What it erases
 
@@ -141,6 +153,7 @@ Not covered: HDDs without encryption, SAS drives on a plain HBA, RAID controller
 
 ## Documentation
 
+- [Dependencies](docs/dependencies.md): hdparm, perccli/storcli, the commands run, kernel interfaces
 - [How it works](docs/how-it-works.md): erase methods, verification, RAID reset, controller erase, firmware floor
 - [Report format](docs/report.md), with [examples](examples/)
 - [Tested hardware](docs/tested-hardware.md) and controller quirks
