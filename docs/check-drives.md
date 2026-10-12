@@ -107,6 +107,7 @@ The `result=` on the last line sums up the machine: `PASS` when every drive othe
 | `in use by the running OS` | The system disk, or a drive opened in the file manager (mounted) | Ignore it for the system disk; for a drive under test, reboot, do not open it, and check again |
 | `not a directly attached ATA device` | A SAS drive, or a controller the tool does not know | SAS drives: see [Appendix B](#appendix-b-drives-behind-a-raid-controller-including-sas) |
 | `controller passes ATA commands through but does not return the drive's status` | The drive is on a RAID or HBA card that does not pass the drive's status back | Attach it to a motherboard SATA port |
+| `does not support non-RAID (JBOD) drives` | The RAID controller is too old (e.g. Dell PERC H710P): it cannot pass drives to the OS, nor crypto-erase them | Move the drives to a newer controller (e.g. PERC H730P) or a motherboard port and check again |
 | `rerun with --raid-reset`, `PERC virtual disk` | The drive is behind a RAID controller | See [Appendix B](#appendix-b-drives-behind-a-raid-controller-including-sas) |
 | A drive under test is not in the table | The system does not see the drive | Check the cables and power; check that the BIOS sees the drive |
 | The program stops with `required tool missing` | hdparm or the RAID controller tool is missing | Go back to step 2; for RAID controllers see Appendix B |

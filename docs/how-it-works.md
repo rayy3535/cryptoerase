@@ -67,7 +67,7 @@ On a PERC or MegaRAID controller in RAID mode, the OS sees virtual disks, not dr
    - it carries a foreign configuration;
    - any drive is in a state other than online, unconfigured good, JBOD or hot spare (failed, rebuilding, Unconfigured Bad, …);
    - the OS uses a disk on such a controller, and a virtual disk cannot be matched to its block device (by the CLI's "OS Drive Name" or the SCSI NAA identifier);
-   - the controller does not support non-RAID drives at all (`Support JBOD = No` in `/cN show all`), so it could not pass the drives to the OS. Dell PERC 8 (H710, H710P, H810) and older are like this.
+   - the controller does not support non-RAID drives at all (`/cN show jbod` answers "Controller does not support JBOD", or `/cN show all` says `Support JBOD = No`), so it could not pass the drives to the OS. Dell PERC 8 (H710, H710P, H810) and older are like this; the PERC H710P also reports `Support Drive Crypto Erase = No`.
 
    In the inventory, a drive the OS cannot see is `PLANNED` only if the reset can expose it and something can then erase it: a SAS drive or hard disk that the controller does not report "Cryptographic Erase Capable" is `UNHANDLED` already.
 3. **Apply,** in erase mode only:

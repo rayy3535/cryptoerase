@@ -2,7 +2,7 @@
 
 ## v0.7.1 (2026-10-12)
 
-- **Controllers without non-RAID support.** On a PowerEdge R630 with a PERC H710P, `--inventory --raid-reset` reported four SAS drives in state Ready as `PLANNED` and the run `PASS`, but the erase failed on the first `set jbod` with `command invalid`: PERC 8 controllers (H710, H710P, H810) cannot pass drives to the OS at all. The configuration read now includes the controller's model, firmware and "Support JBOD" (`/cN show all`). When it is `No`, the RAID reset leaves the controller unchanged, in the inventory too, and its drives are `UNHANDLED` with the reason.
+- **Controllers without non-RAID support.** On a PowerEdge R630 with a PERC H710P Mini (firmware 3.131.05-3415), `--inventory --raid-reset` reported four SAS hard disks in state Ready as `PLANNED` and the run `PASS`. The erase then failed on the first `set jbod` with `command invalid`: PERC 8 controllers (H710, H710P, H810) cannot pass drives to the OS at all, and `/c0 show jbod` answers "Controller does not support JBOD". The configuration read now includes the controller's model, firmware, JBOD support and "Support Drive Crypto Erase" (`/cN show all`, `/cN show jbod`). A controller without JBOD support is left unchanged by the RAID reset, in the inventory too, and its drives are `UNHANDLED` with the reason, also without `--raid-reset`.
 - In the inventory, a drive the OS cannot see that is a SAS drive or a hard disk, and that the controller does not report "Cryptographic Erase Capable", is `UNHANDLED` rather than `PLANNED`: after a RAID reset nothing could erase it.
 
 ## v0.7.0 (2026-10-05)

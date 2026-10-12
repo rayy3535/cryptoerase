@@ -1,0 +1,19 @@
+{
+"Controllers":[
+{
+	"Command Status" : {
+		"CLI Version" : "007.1623.0000.0000 May 17, 2021",
+		"Operating system" : "Linux 5.15.0-39-generic",
+		"Controller" : 0,
+		"Status" : "Failure",
+		"Description" : "None",
+		"Detailed Status" : [
+			{
+				"Ctrl_Prop" : "JBOD",
+				"Value" : "Controller does not support JBOD"
+			}
+		]
+	}
+}
+]
+}

@@ -107,6 +107,7 @@ result=INCOMPLETE exit=2 report=cryptoerase-XXXXXXXX-20261011T120000Z.json
 | `in use by the running OS` | 这是当前系统所在的盘，或者在文件管理器里点开过这块盘（被挂载了） | 系统盘忽略即可；待测盘的话，重启后不要点开它，再测一次 |
 | `not a directly attached ATA device` | SAS 盘，或接在本工具不认识的卡上 | SAS 盘见[附录 B](#附录-b阵列卡后面的盘含-sas-盘) |
 | `controller passes ATA commands through but does not return the drive's status` | 盘接在阵列卡或 HBA 卡上，卡不回传盘的状态 | 改接主板 SATA 口 |
+| `does not support non-RAID (JBOD) drives` | 阵列卡太老（如 Dell PERC H710P），不能把盘交给系统，也不能加密擦除 | 把盘换到新一些的阵列卡（如 PERC H730P）或主板接口上再测 |
 | `rerun with --raid-reset`、`PERC virtual disk` | 盘在阵列卡后面 | 见[附录 B](#附录-b阵列卡后面的盘含-sas-盘) |
 | 表里没有待测盘 | 系统没识别到这块盘 | 检查接线和供电；在 BIOS 里确认能看到这块盘 |
 | 程序直接退出：`required tool missing` | 缺 hdparm 或阵列卡工具 | 回到第 2 步；阵列卡见附录 B |

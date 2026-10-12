@@ -292,3 +292,24 @@ func TestControllerInfo(t *testing.T) {
 		}
 	}
 }
+
+// A PERC H710P has no "Support JBOD" in "show all", and answers "show jbod"
+// with a failure (captured from hardware).
+func TestControllerInfoH710P(t *testing.T) {
+	f := &fakeCLI{out: map[string]string{
+		"/call/eall/sall show all J": string(readFixture(t, "synthetic_pd_showall.json")),
+		"/call/vall show all J":      string(readFixture(t, "synthetic_vall_showall.json")),
+		"/c0 show all J": `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success","Description":"None"},"Response Data":{` +
+			`"Basics":{"Controller":0,"Model":"PERC H710P Mini"},"Version":{"Firmware Version":"3.131.05-3415"},` +
+			`"Supported Adapter Operations":{"Support Security":"Yes","Support SecurityonJBOD":"No","Support JBOD Write cache":"No","Support Drive Crypto Erase":"No"}}}]}`,
+		"/c0 show jbod J": string(readFixture(t, "h710p_show_jbod.json")),
+	}}
+	ctrls, err := f.lister().Controllers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := ctrls[0]
+	if c.Model != "PERC H710P Mini" || c.Firmware != "3.131.05-3415" || c.JBODSupport != "No" || c.DriveCryptoErase != "No" || c.JBOD != "" {
+		t.Fatalf("%+v", c)
+	}
+}

@@ -554,3 +554,17 @@ func TestHiddenSASWithoutControllerErase(t *testing.T) {
 		wantResult(t, rep, "s1", want, "")
 	}
 }
+
+// Without --raid-reset, drives behind a controller without non-RAID
+// support are not told to rerun with it: it would not help.
+func TestHiddenDrivesNoJBODWithoutReset(t *testing.T) {
+	h, f := jbodOffHost(t)
+	f.ctrls[0].JBOD, f.ctrls[0].JBODSupport, f.ctrls[0].DriveCryptoErase, f.ctrls[0].Model = "", "No", "No", "PERC H710P Mini"
+	o := raidOptions(h, f, ModeInventory)
+	o.RAIDReset = false
+	rep := h.run(o)
+	d := wantResult(t, rep, "s0", Unhandled, "the controller (PERC H710P Mini) does not support non-RAID (JBOD) drives")
+	if !strings.Contains(d.Reason, "Support Drive Crypto Erase = No") || strings.Contains(d.Reason, "rerun with --raid-reset") {
+		t.Fatalf("%q", d.Reason)
+	}
+}

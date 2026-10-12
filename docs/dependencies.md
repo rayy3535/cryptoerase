@@ -45,6 +45,7 @@ Commands run (`J` asks for JSON output):
 | `show ctrlcount J` | Choosing between several installed CLIs |
 | `/call/eall/sall show all J` (or `/call/sall show all J`) | Reading the drives: state, serial number, WWN, crypto erase capability |
 | `/call/vall show all J` | Reading the virtual disks |
+| `/cN show all J` | Reading the controller's model, firmware, JBOD support and drive crypto erase support |
 | `/cN show jbod J` | Reading the controller's JBOD mode |
 | `/call/eall/sall show J` (or `/call/sall show J`) | Listing the drives behind a virtual disk |
 | `/cN show events type=latest=N` | Reading the result of a controller erase |
