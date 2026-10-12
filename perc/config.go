@@ -43,6 +43,13 @@ type Controller struct {
 	// cannot be set to JBOD (non-RAID); Broadcom-branded and OEM controllers
 	// ship with it off.
 	JBOD string `json:"jbod,omitempty"`
+	// JBODSupport is "Support JBOD" from "/cN show all": "Yes", "No", or
+	// empty when not reported. Controllers without it (Dell PERC 8 and
+	// older, e.g. H710P) cannot pass drives through to the OS at all.
+	JBODSupport string `json:"jbod_support,omitempty"`
+	// Model and Firmware identify the controller ("/cN show all").
+	Model    string `json:"model,omitempty"`
+	Firmware string `json:"firmware,omitempty"`
 }
 
 // Path returns the CLI object path of a drive slot on controller c:
@@ -126,10 +133,45 @@ func (l *Lister) Controllers(ctx context.Context) ([]Controller, error) {
 		return nil, err
 	}
 	for i := range ctrls {
-		// Not every controller reports it; unknown is left empty.
+		// Not every controller reports these; unknown is left empty.
 		ctrls[i].JBOD, _ = l.JBODMode(ctx, ctrls[i].Index)
+		if _, doc, err := l.doJSON(ctx, fmt.Sprintf("/c%d", ctrls[i].Index), "show", "all"); err == nil {
+			ctrls[i].Model, ctrls[i].Firmware, ctrls[i].JBODSupport = ParseControllerInfo(doc)
+		}
 	}
 	return ctrls, nil
+}
+
+// ParseControllerInfo reads the model ("Basics" / "Model", or "Product
+// Name"), the firmware ("Version" / "Firmware Version") and "Support JBOD"
+// (under "Supported Adapter Operations", or anywhere) from "/cN show all J".
+func ParseControllerInfo(doc *jsonDoc) (model, firmware, jbodSupport string) {
+	sub := func(m map[string]any, section, key string) string {
+		s, _ := m[section].(map[string]any)
+		v, _ := str(s[key])
+		return strings.TrimSpace(v)
+	}
+	for _, c := range doc.Controllers {
+		rd, ok := c.ResponseData.(map[string]any)
+		if !ok {
+			continue
+		}
+		model = sub(rd, "Basics", "Model")
+		if model == "" {
+			v, _ := str(rd["Product Name"])
+			model = strings.TrimSpace(v)
+		}
+		firmware = sub(rd, "Version", "Firmware Version")
+		jbodSupport = sub(rd, "Supported Adapter Operations", "Support JBOD")
+		if jbodSupport == "" {
+			walkMaps(rd, func(m map[string]any) {
+				if v, ok := str(m["Support JBOD"]); ok && jbodSupport == "" {
+					jbodSupport = strings.TrimSpace(v)
+				}
+			})
+		}
+	}
+	return model, firmware, jbodSupport
 }
 
 // JBODMode returns controller c's JBOD mode, "ON" or "OFF" ("/cC show

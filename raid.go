@@ -163,6 +163,14 @@ func (r *runner) planRAID(c perc.Controller, megaraidInUse bool) *RAIDReset {
 		}
 		return rr
 	}
+	if len(rr.Expose) > 0 && strings.EqualFold(c.JBODSupport, "No") {
+		name := "the controller"
+		if c.Model != "" {
+			name = "the controller (" + c.Model + ")"
+		}
+		rr.Skipped = name + " does not support non-RAID (JBOD) drives (Support JBOD = No), so its drives cannot be passed to the OS to be erased and verified; Dell PERC 8 (H710, H710P, H810) and older lack it"
+		return rr
+	}
 	if len(rr.Expose) > 0 && strings.EqualFold(c.JBOD, "OFF") {
 		if _, ok := r.opts.PERC.(jbodEnabler); !ok {
 			rr.Skipped = "JBOD mode is off on the controller, and the RAID backend cannot turn it on"

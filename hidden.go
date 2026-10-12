@@ -91,6 +91,10 @@ func (r *runner) reportHiddenDrives(ctx context.Context, rep *Report) {
 			switch {
 			case plan != nil && plan.Skipped != "":
 				r.done(rec, Unhandled, hidden+"; the RAID reset skipped this controller: "+plan.Skipped)
+			case noControllerErase(d):
+				// Even exposed by a RAID reset, nothing here could erase such
+				// a drive (see percPhysical).
+				r.done(rec, Unhandled, hidden+"; the controller does not report it Cryptographic Erase Capable, and a SAS drive or hard disk behind it has no other erase method here")
 			case plan != nil && r.opts.Mode == ModeInventory && slices.ContainsFunc(plan.Expose, func(e perc.Drive) bool { return e.Slot == d.Slot }):
 				rec.Planned = "raid-reset"
 				r.done(rec, Planned, hidden+"; the RAID reset sets it to non-RAID, then it is checked and erased on its own")
@@ -122,4 +126,11 @@ func (r *runner) recordOf(rep *Report, d perc.Drive, slot string) *DriveRecord {
 		}
 	}
 	return nil
+}
+
+// noControllerErase reports whether drive d is a SAS drive or a hard disk
+// that its controller cannot crypto-erase: behind a PERC/MegaRAID
+// controller, only the controller can erase those.
+func noControllerErase(d perc.Drive) bool {
+	return !d.CryptoErase && (strings.EqualFold(strings.TrimSpace(d.Interface), "SAS") || strings.EqualFold(strings.TrimSpace(d.Media), "HDD"))
 }

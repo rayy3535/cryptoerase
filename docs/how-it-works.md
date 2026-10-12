@@ -66,7 +66,10 @@ On a PERC or MegaRAID controller in RAID mode, the OS sees virtual disks, not dr
 2. **Decide, without changing anything.** A virtual disk that backs a disk the running OS uses (mounted, swap, through LVM) is kept, with its drives. The whole controller is left unchanged if:
    - it carries a foreign configuration;
    - any drive is in a state other than online, unconfigured good, JBOD or hot spare (failed, rebuilding, Unconfigured Bad, …);
-   - the OS uses a disk on such a controller, and a virtual disk cannot be matched to its block device (by the CLI's "OS Drive Name" or the SCSI NAA identifier).
+   - the OS uses a disk on such a controller, and a virtual disk cannot be matched to its block device (by the CLI's "OS Drive Name" or the SCSI NAA identifier);
+   - the controller does not support non-RAID drives at all (`Support JBOD = No` in `/cN show all`), so it could not pass the drives to the OS. Dell PERC 8 (H710, H710P, H810) and older are like this.
+
+   In the inventory, a drive the OS cannot see is `PLANNED` only if the reset can expose it and something can then erase it: a SAS drive or hard disk that the controller does not report "Cryptographic Erase Capable" is `UNHANDLED` already.
 3. **Apply,** in erase mode only:
    - remove hot spares (`delete hotsparedrive`);
    - delete the other virtual disks (`/cN/vM delete force`);

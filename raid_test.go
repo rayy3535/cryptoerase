@@ -511,3 +511,46 @@ func TestRAIDResetJBODOffWithoutEnabler(t *testing.T) {
 		t.Fatalf("%+v calls %v", rr, f.calls)
 	}
 }
+
+// A controller without JBOD support (PERC H710P) cannot pass drives to the
+// OS: the reset leaves it unchanged, in inventory and erase mode alike, and
+// its drives are UNHANDLED rather than PLANNED.
+func TestRAIDResetNoJBODSupport(t *testing.T) {
+	for _, mode := range []Mode{ModeInventory, ModeErase} {
+		h, f := jbodOffHost(t)
+		f.ctrls[0].JBOD, f.ctrls[0].JBODSupport, f.ctrls[0].Model = "", "No", "PERC H710P Mini"
+		rep := h.run(raidOptions(h, f, mode))
+		if len(f.calls) != 0 {
+			t.Fatalf("%s: controller changed: %v", mode, f.calls)
+		}
+		rr := rep.RAIDReset[0]
+		if !strings.Contains(rr.Skipped, "the controller (PERC H710P Mini) does not support non-RAID (JBOD) drives") {
+			t.Fatalf("%s: %+v", mode, rr)
+		}
+		d := wantResult(t, rep, "s0", Unhandled, "the RAID reset skipped this controller: the controller (PERC H710P Mini) does not support non-RAID")
+		if d.Planned != "" || rep.Result != "INCOMPLETE" {
+			t.Errorf("%s: planned %q, result %s", mode, d.Planned, rep.Result)
+		}
+	}
+}
+
+// A hidden SAS drive the controller cannot crypto-erase is UNHANDLED in the
+// inventory: a RAID reset would expose it, but nothing could erase it.
+func TestHiddenSASWithoutControllerErase(t *testing.T) {
+	for _, reset := range []bool{true, false} {
+		h, f := jbodOffHost(t)
+		f.ctrls[0].JBOD = ""
+		f.ctrls[0].Drives[0].Interface, f.ctrls[0].Drives[0].Media, f.ctrls[0].Drives[0].Model = "SAS", "HDD", "ST600MM0088"
+		f.ctrls[0].Drives[1].CryptoErase = true
+		f.ctrls[0].Drives[1].Interface, f.ctrls[0].Drives[1].Media = "SAS", "HDD"
+		o := raidOptions(h, f, ModeInventory)
+		o.RAIDReset = reset
+		rep := h.run(o)
+		wantResult(t, rep, "s0", Unhandled, "does not report it Cryptographic Erase Capable, and a SAS drive or hard disk behind it has no other erase method here")
+		want := Planned
+		if !reset {
+			want = Unhandled // rerun with --raid-reset
+		}
+		wantResult(t, rep, "s1", want, "")
+	}
+}
