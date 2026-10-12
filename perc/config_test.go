@@ -261,3 +261,55 @@ func TestJBODMode(t *testing.T) {
 		}
 	}
 }
+
+func TestControllerInfo(t *testing.T) {
+	showAll := func(support string) string {
+		return `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success","Description":"None"},"Response Data":{` +
+			`"Basics":{"Controller":0,"Model":"PERC H710P Mini","Serial Number":"EXAMPLE"},` +
+			`"Version":{"Firmware Package Build":"21.3.5-0002","Firmware Version":"3.131.05-8331"},` +
+			`"Supported Adapter Operations":{"Support JBOD":"` + support + `","Support JBOD Write cache":"No"}}}]}`
+	}
+	f := &fakeCLI{out: map[string]string{
+		"/call/eall/sall show all J": string(readFixture(t, "synthetic_pd_showall.json")),
+		"/call/vall show all J":      string(readFixture(t, "synthetic_vall_showall.json")),
+		"/c0 show all J":             showAll("No"),
+	}}
+	ctrls, err := f.lister().Controllers(context.Background())
+	if err != nil || ctrls[0].Model != "PERC H710P Mini" || ctrls[0].Firmware != "3.131.05-8331" || ctrls[0].JBODSupport != "No" {
+		t.Fatalf("%v %+v", err, ctrls)
+	}
+	// "Support JBOD" outside its usual section, and "Product Name".
+	other := `{"Controllers":[{"Command Status":{"Status":"Success"},"Response Data":{"Product Name":" MR9361 ","Capabilities":{"Support JBOD":"Yes"}}}]}`
+	f.out["/c0 show all J"] = other
+	if ctrls, err := f.lister().Controllers(context.Background()); err != nil || ctrls[0].Model != "MR9361" || ctrls[0].JBODSupport != "Yes" {
+		t.Fatalf("%v %+v", err, ctrls)
+	}
+	// Not reported, or the command fails: unknown.
+	for _, out := range []string{`{"Controllers":[{"Command Status":{"Status":"Success"},"Response Data":{}}]}`, ""} {
+		f.out["/c0 show all J"] = out
+		if ctrls, err := f.lister().Controllers(context.Background()); err != nil || ctrls[0].Model != "" || ctrls[0].JBODSupport != "" {
+			t.Errorf("%q: %v %+v", out, err, ctrls)
+		}
+	}
+}
+
+// A PERC H710P has no "Support JBOD" in "show all", and answers "show jbod"
+// with a failure (captured from hardware).
+func TestControllerInfoH710P(t *testing.T) {
+	f := &fakeCLI{out: map[string]string{
+		"/call/eall/sall show all J": string(readFixture(t, "synthetic_pd_showall.json")),
+		"/call/vall show all J":      string(readFixture(t, "synthetic_vall_showall.json")),
+		"/c0 show all J": `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success","Description":"None"},"Response Data":{` +
+			`"Basics":{"Controller":0,"Model":"PERC H710P Mini"},"Version":{"Firmware Version":"3.131.05-3415"},` +
+			`"Supported Adapter Operations":{"Support Security":"Yes","Support SecurityonJBOD":"No","Support JBOD Write cache":"No","Support Drive Crypto Erase":"No"}}}]}`,
+		"/c0 show jbod J": string(readFixture(t, "h710p_show_jbod.json")),
+	}}
+	ctrls, err := f.lister().Controllers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := ctrls[0]
+	if c.Model != "PERC H710P Mini" || c.Firmware != "3.131.05-3415" || c.JBODSupport != "No" || c.DriveCryptoErase != "No" || c.JBOD != "" {
+		t.Fatalf("%+v", c)
+	}
+}

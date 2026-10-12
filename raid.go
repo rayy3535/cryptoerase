@@ -163,6 +163,10 @@ func (r *runner) planRAID(c perc.Controller, megaraidInUse bool) *RAIDReset {
 		}
 		return rr
 	}
+	if len(rr.Expose) > 0 && strings.EqualFold(c.JBODSupport, "No") {
+		rr.Skipped = noJBODReason(c)
+		return rr
+	}
 	if len(rr.Expose) > 0 && strings.EqualFold(c.JBOD, "OFF") {
 		if _, ok := r.opts.PERC.(jbodEnabler); !ok {
 			rr.Skipped = "JBOD mode is off on the controller, and the RAID backend cannot turn it on"
@@ -392,4 +396,22 @@ func exposedMatches(rec *DriveRecord, d perc.Drive) bool {
 		return true
 	}
 	return rec.Attach != nil && wwidMatches(rec.Attach.WWID, d)
+}
+
+// controllerName is "the controller (PERC H710P Mini)", or "the controller".
+func controllerName(c perc.Controller) string {
+	if c.Model != "" {
+		return "the controller (" + c.Model + ")"
+	}
+	return "the controller"
+}
+
+// noJBODReason says why the drives of a controller without non-RAID support
+// cannot be erased.
+func noJBODReason(c perc.Controller) string {
+	s := controllerName(c) + " does not support non-RAID (JBOD) drives, so its drives cannot be passed to the OS to be erased and verified; Dell PERC 8 (H710, H710P, H810) and older lack it"
+	if strings.EqualFold(c.DriveCryptoErase, "No") {
+		s += ". It cannot crypto-erase drives either (Support Drive Crypto Erase = No). Move the drives to a controller that can (e.g. PERC H730P) or to a motherboard port"
+	}
+	return s
 }

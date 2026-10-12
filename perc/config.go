@@ -43,6 +43,17 @@ type Controller struct {
 	// cannot be set to JBOD (non-RAID); Broadcom-branded and OEM controllers
 	// ship with it off.
 	JBOD string `json:"jbod,omitempty"`
+	// JBODSupport is "Yes", "No", or empty when not reported: "Support
+	// JBOD" from "/cN show all", or "No" when "/cN show jbod" answers
+	// "Controller does not support JBOD". Controllers without it (Dell
+	// PERC 8 and older, e.g. H710P) cannot pass drives to the OS at all.
+	JBODSupport string `json:"jbod_support,omitempty"`
+	// DriveCryptoErase is "Support Drive Crypto Erase" from "/cN show all":
+	// whether the controller can crypto-erase drives at all.
+	DriveCryptoErase string `json:"drive_crypto_erase_support,omitempty"`
+	// Model and Firmware identify the controller ("/cN show all").
+	Model    string `json:"model,omitempty"`
+	Firmware string `json:"firmware,omitempty"`
 }
 
 // Path returns the CLI object path of a drive slot on controller c:
@@ -126,10 +137,65 @@ func (l *Lister) Controllers(ctx context.Context) ([]Controller, error) {
 		return nil, err
 	}
 	for i := range ctrls {
-		// Not every controller reports it; unknown is left empty.
-		ctrls[i].JBOD, _ = l.JBODMode(ctx, ctrls[i].Index)
+		// Not every controller reports these; unknown is left empty.
+		c := &ctrls[i]
+		if _, doc, err := l.doJSON(ctx, fmt.Sprintf("/c%d", c.Index), "show", "all"); err == nil {
+			info := ParseControllerInfo(doc)
+			c.Model, c.Firmware, c.JBODSupport, c.DriveCryptoErase = info.Model, info.Firmware, info.JBODSupport, info.DriveCryptoErase
+		}
+		var err error
+		c.JBOD, err = l.JBODMode(ctx, c.Index)
+		var ce *CommandError
+		if errors.As(err, &ce) && strings.Contains(strings.ToLower(ce.Detail), "does not support jbod") {
+			c.JBODSupport = "No"
+		}
 	}
 	return ctrls, nil
+}
+
+// ControllerInfo is what "/cN show all J" says about the controller.
+type ControllerInfo struct {
+	Model, Firmware, JBODSupport, DriveCryptoErase string
+}
+
+// ParseControllerInfo reads the model ("Basics" / "Model", or "Product
+// Name"), the firmware ("Version" / "Firmware Version"), "Support JBOD" and
+// "Support Drive Crypto Erase" (under "Supported Adapter Operations", or
+// anywhere) from "/cN show all J".
+func ParseControllerInfo(doc *jsonDoc) ControllerInfo {
+	var info ControllerInfo
+	sub := func(m map[string]any, section, key string) string {
+		s, _ := m[section].(map[string]any)
+		v, _ := str(s[key])
+		return strings.TrimSpace(v)
+	}
+	anywhere := func(m map[string]any, key string) string {
+		if v := sub(m, "Supported Adapter Operations", key); v != "" {
+			return v
+		}
+		var found string
+		walkMaps(m, func(x map[string]any) {
+			if v, ok := str(x[key]); ok && found == "" {
+				found = strings.TrimSpace(v)
+			}
+		})
+		return found
+	}
+	for _, c := range doc.Controllers {
+		rd, ok := c.ResponseData.(map[string]any)
+		if !ok {
+			continue
+		}
+		info.Model = sub(rd, "Basics", "Model")
+		if info.Model == "" {
+			v, _ := str(rd["Product Name"])
+			info.Model = strings.TrimSpace(v)
+		}
+		info.Firmware = sub(rd, "Version", "Firmware Version")
+		info.JBODSupport = anywhere(rd, "Support JBOD")
+		info.DriveCryptoErase = anywhere(rd, "Support Drive Crypto Erase")
+	}
+	return info
 }
 
 // JBODMode returns controller c's JBOD mode, "ON" or "OFF" ("/cC show
