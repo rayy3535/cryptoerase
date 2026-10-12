@@ -32,6 +32,8 @@ The PERC H355 machine was a PowerEdge R7525, with the NVMe drives and the H355 i
 
 ## Adding to this list
 
+To check drives without erasing them, follow [check-drives.md](check-drives.md).
+
 Run `cryptoerase --inventory`, then an erase, on spare hardware. Open an issue or pull request with:
 - the controller model and firmware (`perccli64 /c0 show | grep -iE "Product Name|FW Version"`);
 - the drive models;
