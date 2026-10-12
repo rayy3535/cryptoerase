@@ -12,7 +12,11 @@
   <a href="https://pkg.go.dev/github.com/rayy3535/cryptoerase"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/rayy3535/cryptoerase.svg"></a>
 </p>
 
+<p align="center">English | <a href="README.zh-CN.md">简体中文</a></p>
+
 Cryptographic erase for every drive in a Linux server, with a JSON evidence report. NVMe, SATA, and SATA/SAS behind Dell PERC or Broadcom MegaRAID controllers. A Go library plus a command-line tool.
+
+Drive makers and suppliers: [check whether your drives support cryptographic erase](docs/check-drives.md), step by step, read-only.
 
 > [!WARNING]
 > **This destroys all data on the drives it erases.** Run an inventory first, and a test erase on spare hardware for each drive model and controller you use. What it has passed on: [docs/tested-hardware.md](docs/tested-hardware.md).
@@ -153,6 +157,7 @@ Not covered: HDDs without encryption, SAS drives on a plain HBA, RAID controller
 
 ## Documentation
 
+- [Check whether drives support cryptographic erase](docs/check-drives.md): step-by-step guide for drive makers and suppliers
 - [Dependencies](docs/dependencies.md): hdparm, perccli/storcli, the commands run, kernel interfaces
 - [How it works](docs/how-it-works.md): erase methods, verification, RAID reset, controller erase, firmware floor
 - [Report format](docs/report.md), with [examples](examples/)
