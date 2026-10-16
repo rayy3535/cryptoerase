@@ -20,7 +20,7 @@
 > [!IMPORTANT]
 > **不要用 USB 硬盘盒、USB 转接线。** USB 接的盘读不到擦除能力，工具会把它标成 `SKIPPED` 并跳过。
 >
-> SAS 盘要接在 Dell PERC 或 Broadcom MegaRAID 阵列卡上，见[附录 B](#附录-b阵列卡后面的盘含-sas-盘)；普通 SAS HBA 卡上的 SAS 盘本工具不支持。
+> SAS 盘要接在 SAS HBA 卡（如 Broadcom 9300/9400/9500 系列、Dell HBA330/HBA355i）上，或接在 Dell PERC / Broadcom MegaRAID 阵列卡上（见[附录 B](#附录-b阵列卡后面的盘含-sas-盘)）。
 
 做启动盘：从 [ubuntu.com/download/desktop](https://ubuntu.com/download/desktop) 下载 Ubuntu 24.04 LTS 桌面版 ISO，用 [Rufus](https://rufus.ie) 或 [balenaEtcher](https://etcher.balena.io) 写入 U 盘。
 
@@ -105,7 +105,8 @@ result=INCOMPLETE exit=2 report=cryptoerase-XXXXXXXX-20261011T120000Z.json
 | `firmware … is below …; upgrade firmware` | 固件版本有已知擦除缺陷 | 升级固件后再测 |
 | `removable or USB device`（`SKIPPED`） | 盘是 USB 接的 | 改接主板 SATA 口或 M.2 口 |
 | `in use by the running OS` | 这是当前系统所在的盘，或者在文件管理器里点开过这块盘（被挂载了） | 系统盘忽略即可；待测盘的话，重启后不要点开它，再测一次 |
-| `not a directly attached ATA device` | SAS 盘，或接在本工具不认识的卡上 | SAS 盘见[附录 B](#附录-b阵列卡后面的盘含-sas-盘) |
+| `no SCSI SANITIZE CRYPTOGRAPHIC ERASE support` | SAS 固态盘不支持加密擦除 | **不支持** |
+| `not a directly attached ATA or SAS drive` | 本工具不处理的 RAID 卡上的逻辑卷，或 SAN 存储的卷 | 把盘接到 SAS HBA、主板接口或 PERC/MegaRAID 阵列卡上 |
 | `controller passes ATA commands through but does not return the drive's status` | 盘接在阵列卡或 HBA 卡上，卡不回传盘的状态 | 改接主板 SATA 口 |
 | `does not support non-RAID (JBOD) drives` | 阵列卡太老（如 Dell PERC H710P），不能把盘交给系统，也不能加密擦除 | 把盘换到新一些的阵列卡（如 PERC H730P）或主板接口上再测 |
 | `rerun with --raid-reset`、`PERC virtual disk` | 盘在阵列卡后面 | 见[附录 B](#附录-b阵列卡后面的盘含-sas-盘) |

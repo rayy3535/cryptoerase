@@ -8,7 +8,7 @@ cryptoerase is a static Go binary with no shared-library or Go-module dependenci
 | [hdparm](#hdparm) 9.56 or later | A SATA drive is present, or `--raid-reset` is given | The run stops before changing anything (exit 1, no report) |
 | [perccli64 or storcli64](#raid-controller-cli) | A Dell PERC / Broadcom MegaRAID controller (`megaraid_sas`) is present, or `--raid-reset` is given | The run stops before changing anything (exit 1, no report) |
 
-NVMe drives need neither program. SATA drives on AHCI or an HBA such as smartpqi need only hdparm. The check runs before anything is written, and ignores disks that are excluded, in use by the running OS, removable, USB or empty.
+NVMe drives, and SAS drives on an HBA, need neither program. SATA drives on AHCI or an HBA such as smartpqi need only hdparm. The check runs before anything is written, and ignores disks that are excluded, in use by the running OS, removable, USB or empty.
 
 ## hdparm
 
@@ -67,13 +67,13 @@ Everything else goes straight to the kernel:
 |---|---|
 | `NVME_IOCTL_ADMIN_CMD` on `/dev/nvmeN` | Identify, Get Log Page, Sanitize, Format NVM, Security Receive (TCG Level 0 Discovery) |
 | `NVME_IOCTL_ID`, `NVME_IOCTL_RESCAN` | Namespace ID of a block device; rescanning namespaces after Format NVM |
-| `SG_IO` on `/dev/sdX` | MODE SENSE / MODE SELECT of the Control page, only when a controller returns ATA status in fixed-format sense data (D_SENSE; seen on smartpqi) |
+| `SG_IO` on `/dev/sdX` | SAS drives on an HBA: REPORT SUPPORTED OPERATION CODES, REQUEST SENSE and SANITIZE (CRYPTOGRAPHIC ERASE). SATA drives: MODE SENSE / MODE SELECT of the Control page, only when a controller returns ATA status in fixed-format sense data (D_SENSE; seen on smartpqi) |
 | `O_DIRECT` reads and writes, `BLKGETSIZE64`, `BLKFLSBUF` on block devices | The markers |
 | `/sys/block`, `/sys/class/{nvme,block,scsi_host,dmi}`, `/sys/dev/block` (read) | Finding drives, drivers, WWNs and serial numbers, host identity |
 | `/sys/block/sdX/device/delete`, `/sys/class/scsi_host/hostN/scan` (write) | Behind a PERC/MegaRAID controller, erase mode: removing a disk from the kernel before the controller erase, and finding it again afterwards |
 | `/proc/mounts`, `/proc/swaps`, `/proc/self/mountinfo` | Disks the running OS uses, which are never touched |
 
-Root is needed: CAP_SYS_ADMIN for NVMe admin commands, CAP_SYS_RAWIO for SG_IO, and write access to block devices and sysfs. The drivers on the tested servers were `nvme`, `ahci`, `megaraid_sas` and `smartpqi`; the Inspur servers ran kernel 5.15.
+Root is needed: CAP_SYS_ADMIN for NVMe admin commands, CAP_SYS_RAWIO for SG_IO, and write access to block devices and sysfs. The drivers on the tested servers were `nvme`, `ahci`, `megaraid_sas`, `smartpqi` and `mpt3sas`; the Inspur servers ran kernel 5.15.
 
 ## Not needed
 

@@ -135,8 +135,9 @@ func (r *runner) planRAID(c perc.Controller, megaraidInUse bool) *RAIDReset {
 		case d.Foreign():
 			rr.Skipped = fmt.Sprintf("drive %s carries a foreign configuration; import or clear it first (%s %s/fall show)", d.Slot, c.Tool, fmt.Sprintf("/c%d", c.Index))
 			return rr
-		case d.NonRAID():
-			// Already visible to the OS; erased like any other disk.
+		case d.NonRAID() || r.findExposed(d) != "":
+			// Already visible to the OS (non-RAID, or on an HBA such as the
+			// HBA355i); erased like any other disk.
 		case state == "ONLN":
 			dg := d.DriveGroup()
 			if keepDG[dg] {

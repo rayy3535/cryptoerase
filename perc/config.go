@@ -389,7 +389,8 @@ var (
 
 // ParseVirtualDisks parses "/call/vall show all J". A controller without
 // virtual disks answers with a failure status ("No VDs have been
-// configured"), which is not an error here.
+// configured"), and an HBA (e.g. HBA355i) with "Un-supported command";
+// neither is an error here.
 func ParseVirtualDisks(out []byte) ([]VirtualDisk, error) {
 	var doc jsonDoc
 	if err := json.Unmarshal(out, &doc); err != nil {
@@ -399,7 +400,7 @@ func ParseVirtualDisks(out []byte) ([]VirtualDisk, error) {
 	for _, c := range doc.Controllers {
 		st := c.CommandStatus
 		if !strings.EqualFold(st.Status, "Success") {
-			if strings.Contains(strings.ToLower(st.Description), "no vd") {
+			if d := strings.ToLower(st.Description); strings.Contains(d, "no vd") || strings.Contains(d, "un-supported command") {
 				continue
 			}
 			return nil, fmt.Errorf("virtual disks: %s: %s", st.Status, st.Description)

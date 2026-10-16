@@ -51,8 +51,11 @@ func (r *runner) scsiDrive(ctx context.Context, name string) *DriveRecord {
 	case driver == "megaraid_sas" && (!isATA || rotational):
 		// A SAS drive or a SATA hard disk passed through by the controller.
 		return r.percPhysical(ctx, rec, name, driver, rotational)
+	case !isATA && r.onSASTransport(name):
+		// A SAS drive on an HBA.
+		return r.sasDrive(ctx, rec, name, vendor, model, driver, rotational)
 	case !isATA:
-		return r.done(rec, Unhandled, fmt.Sprintf("not a directly attached ATA device (vendor=%q, model=%q, driver=%s); SAS or other controller, use controller tool", vendor, model, driver))
+		return r.done(rec, Unhandled, fmt.Sprintf("not a directly attached ATA or SAS drive (vendor=%q, model=%q, driver=%s): a RAID logical volume or a SAN LUN, use the controller or array tools", vendor, model, driver))
 	}
 	rec.MediaType = "SSD (SATA)"
 	if rotational {

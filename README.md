@@ -14,7 +14,7 @@
 
 <p align="center">English | <a href="README.zh-CN.md">简体中文</a></p>
 
-Cryptographic erase for every drive in a Linux server, with a JSON evidence report. NVMe, SATA, and SATA/SAS behind Dell PERC or Broadcom MegaRAID controllers. A Go library plus a command-line tool.
+Cryptographic erase for every drive in a Linux server, with a JSON evidence report. NVMe, SATA, SAS on an HBA, and SATA/SAS behind Dell PERC or Broadcom MegaRAID controllers. A Go library plus a command-line tool.
 
 Drive makers and suppliers: [check whether your drives support cryptographic erase](docs/check-drives.md), step by step, read-only.
 
@@ -135,7 +135,7 @@ A static binary; on the server it needs root and, depending on the drives, up to
 | `perccli64` | Dell PERC controller | Dell support site, "PERC CLI" | `$PATH`, `/opt/MegaRAID/perccli`, or `--raid-cli PATH` |
 | `storcli64` | Broadcom, LSI or OEM MegaRAID controller (perccli does not see these) | Broadcom support site, "StorCLI" | `$PATH`, `/opt/MegaRAID/storcli`, or `--raid-cli PATH` |
 
-- NVMe drives need neither program: the tool talks to them through the kernel. SATA drives on AHCI or an HBA such as smartpqi need only hdparm.
+- NVMe drives, and SAS drives on an HBA, need neither program: the tool talks to them through the kernel. SATA drives on AHCI or an HBA such as smartpqi need only hdparm.
 - `--raid-reset` needs hdparm and a controller CLI, since the drives it exposes are not visible beforehand.
 - A missing program stops the run before anything is changed: exit code 1, no report, and the message names the program and the disk that needs it.
 - Not needed: nvme-cli, sg3_utils, sdparm, smartmontools, sedutil-cli, MegaCli, arcconf.
@@ -149,11 +149,12 @@ Every command it runs, and the kernel interfaces it uses: [docs/dependencies.md]
 |---|---|
 | NVMe | Sanitize, Crypto Erase (Format NVM with Cryptographic Erase only with `--allow-format`) |
 | SATA SSD or HDD, directly attached or behind an HBA (AHCI, smartpqi, …) | ATA SANITIZE CRYPTO SCRAMBLE, if the drive supports it |
+| SAS SSD or HDD on an HBA (mpt3sas, smartpqi, …) | SCSI SANITIZE, CRYPTOGRAPHIC ERASE, if the drive supports it |
 | SATA or SAS, SSD or HDD, behind a PERC / MegaRAID | The controller's cryptographic erase, for drives it reports capable |
 
 Cryptographic erase only: no overwrite, block erase or zero-fill fallback. Each drive passes only if the device or controller reports success **and** 16 random markers written before the erase all read back changed. Drives it cannot erase are reported `UNHANDLED` or `FAIL` with the reason, never skipped.
 
-Not covered: HDDs without encryption, SAS drives on a plain HBA, RAID controllers other than PERC/MegaRAID, locked drives (TCG Opal locked range, ATA user password), NVMe controllers with no namespace.
+Not covered: HDDs without encryption, RAID logical volumes of controllers other than PERC/MegaRAID, SAN LUNs, locked drives (TCG Opal locked range, ATA user password), NVMe controllers with no namespace.
 
 ## Documentation
 

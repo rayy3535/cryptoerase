@@ -15,6 +15,7 @@
 | NVMe | Sanitize, Crypto Erase action (SANACT=100b) | SANICAP bit 0 |
 | NVMe, only with `--allow-format` | Format NVM, Secure Erase Setting 010b (Cryptographic Erase), keeping the current LBA format, metadata and protection information | FNA bit 2, and no unallocated NVM capacity |
 | SATA SSD or HDD, directly attached | ATA SANITIZE CRYPTO SCRAMBLE EXT | IDENTIFY word 59 bits 12 and 13. An SSD without it is `FAIL`; an HDD without it is `UNHANDLED`, as most HDDs do not encrypt |
+| SAS SSD or HDD on an HBA (mpt3sas, smartpqi, …) | SCSI SANITIZE, service action CRYPTOGRAPHIC ERASE (SBC-4) | REPORT SUPPORTED OPERATION CODES lists it. An SSD without it is `FAIL`; an HDD without it is `UNHANDLED` |
 | SATA or SAS, SSD or HDD, behind a Dell PERC / Broadcom MegaRAID | The controller's cryptographic erase (`start erase crypto`) | The controller reports the drive "Cryptographic Erase Capable" (ISE or SED drives) |
 
 There is no fallback to block erase, overwrite, ATA Security Erase or zero-fill. A drive without a cryptographic erase method is reported `FAIL` or `UNHANDLED`, never skipped silently.
@@ -27,6 +28,7 @@ Two independent checks must both pass.
    - NVMe Sanitize: the Sanitize Status log page, with SSTAT reporting success. The Global Data Erased bit is recorded.
    - NVMe Format: successful command completion.
    - ATA: SANITIZE STATUS EXT reporting "completed without error".
+   - SCSI: REQUEST SENSE no longer reporting the sanitize in progress (04/1B), nor SANITIZE COMMAND FAILED (31/03).
    - Controller erase: `Erase completed on PD …` for that drive in the controller event log.
 2. **Markers.** Before the erase, 16 random 1 MiB blocks are written with O_DIRECT at evenly spaced offsets of every namespace or disk. Each is read back to confirm it landed. After the erase, every one of them must read back different. This catches firmware that reports success without changing the data.
 
@@ -45,6 +47,8 @@ The write handle used for the markers stays open until the erase command has fin
 - **SATA:** through [hdparm](https://sourceforge.net/projects/hdparm/) (9.56 or later), behind the `ata.Backend` interface. hdparm handles SCSI/ATA Translation and sense-data formats across kernels and HBAs.
   - When hdparm gets no ATA registers back (`bad/missing sense data`), the controller may be using fixed-format sense data, which has no room for all the registers. The tool then sets D_SENSE in the disk's Control mode page (MODE SENSE / MODE SELECT through SG_IO, not saved), so the controller uses descriptor format, and asks again. This made SATA drives behind smartpqi readable. If the registers still do not come back, the outcome of a command cannot be read, and the tool treats it as not done.
   - SANITIZE STATUS EXT (read-only) runs before anything is written, in `--inventory` too.
+- **SAS on an HBA:** SCSI commands through SG_IO on `/dev/sdX`, opened read-only: REPORT SUPPORTED OPERATION CODES (does the drive support SANITIZE, CRYPTOGRAPHIC ERASE?), REQUEST SENSE (sanitize state and progress, read-only, in `--inventory` too) and SANITIZE with IMMED set (erase mode only). AUSE is clear: if a sanitize fails, the drive stays in sanitize failure mode until a sanitize completes.
+  - Only a SAS end device (its sysfs path goes through `end_device-…`) is sanitized. A RAID controller's logical volume, or a Fibre Channel or iSCSI LUN of a shared array, is never sent SANITIZE; it is `UNHANDLED`.
 - **Dell PERC / Broadcom MegaRAID:** through `perccli64`, `perccli`, `storcli64` or `storcli`, using JSON output. The exception is the event log, which the CLI prints as text even when asked for JSON.
   - perccli manages Dell PERC controllers only; Broadcom-branded and OEM controllers (Inspur, Supermicro, Lenovo, …) need storcli. With several installed, the tool uses the first that sees a controller (`show ctrlcount`). `--raid-cli` overrides the search.
 
@@ -104,7 +108,7 @@ SAS drives and SATA hard disks cannot be sanitized through hdparm at all.
 
 So a drive behind the controller is erased by the controller whenever the controller reports it "Cryptographic Erase Capable". Otherwise:
 - a SATA SSD falls back to SANITIZE through hdparm; its failure reason also says why the controller could not be used;
-- SAS drives and SATA hard disks are `UNHANDLED`, because overwriting is outside this tool's scope.
+- SAS drives and SATA hard disks are `UNHANDLED`, because overwriting is outside this tool's scope. (On an HBA, SAS drives are sanitized directly, see above.)
 
 ### Steps
 

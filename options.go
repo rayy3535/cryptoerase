@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package cryptoerase performs and records cryptographic erase of the drives
-// in a server (NVMe, SATA, and SATA or SAS drives behind a Dell PERC /
-// Broadcom MegaRAID controller), e.g. before the server is handed to its
-// next user.
+// in a server (NVMe, SATA, SAS drives on an HBA, and SATA or SAS drives
+// behind a Dell PERC / Broadcom MegaRAID controller), e.g. before the server
+// is handed to its next user.
 //
 // Policy:
 //
 //   - Cryptographic Erase only. NVMe: Sanitize with the Crypto Erase action;
 //     Format NVM with SES=010b only when Options.AllowFormat is set and the
 //     controller reports no unallocated NVM capacity. SATA: ATA SANITIZE
-//     CRYPTO SCRAMBLE EXT. Behind a PERC/MegaRAID controller: the
+//     CRYPTO SCRAMBLE EXT. SAS on an HBA: SCSI SANITIZE, CRYPTOGRAPHIC
+//     ERASE. Behind a PERC/MegaRAID controller: the
 //     controller's cryptographic erase, for drives it reports capable;
 //     Options.RAIDReset first removes the RAID virtual disks.
 //   - Fail closed. There is no fallback to block erase, overwrite, ATA
@@ -19,8 +20,9 @@
 //   - Firmware floor. Drives matching a FirmwareRule below its minimum are
 //     reported FAIL.
 //   - Drives that cannot be erased (RAID virtual disks without RAIDReset,
-//     drives behind the controller the OS cannot see, HDDs and SAS drives
-//     without a controller crypto erase, disks in use by the running OS,
+//     drives behind the controller the OS cannot see, HDDs without a
+//     cryptographic erase, RAID logical volumes and SAN LUNs, disks in use
+//     by the running OS,
 //     exclusions) are reported UNHANDLED, never skipped silently.
 //   - Verification: the device's or controller's completion status, plus
 //     markers. Random 1 MiB markers are written at evenly spaced offsets of
@@ -45,7 +47,7 @@ import (
 )
 
 // Version of the library and CLI.
-const Version = "0.7.3"
+const Version = "0.8.0"
 
 // Mode selects what Run does.
 type Mode int
@@ -63,6 +65,14 @@ func (m Mode) String() string {
 		return "erase"
 	}
 	return "inventory"
+}
+
+// SCSIBackend erases SAS drives with SCSI SANITIZE. scsi.Sanitizer
+// implements it.
+type SCSIBackend interface {
+	CryptoEraseSupport(dev string) (scsi.Support, error)
+	SanitizeStatus(dev string) (*scsi.SanitizeStatus, error)
+	CryptoErase(dev string) error
 }
 
 // PERCLister lists physical drives behind a RAID controller.
@@ -113,6 +123,9 @@ type Options struct {
 	OpenBlock func(path string, direct, write bool) (blockdev.Device, error)
 	ATA       ata.Backend
 	PERC      PERCLister
+	// SCSI sends SCSI SANITIZE to SAS drives the OS sees directly (on a
+	// SAS HBA). Nil selects scsi.Sanitizer (SG_IO).
+	SCSI SCSIBackend
 	// DescriptorSense sets D_SENSE in the Control mode page of a SCSI disk,
 	// so the controller returns ATA registers in descriptor-format sense
 	// data, and reports whether it changed the setting. It is used when ATA
@@ -208,6 +221,9 @@ func (o *Options) withDefaults() (Options, error) {
 	}
 	if v.PERC == nil {
 		v.PERC = &perc.Lister{}
+	}
+	if v.SCSI == nil {
+		v.SCSI = scsi.Sanitizer{}
 	}
 	if v.DescriptorSense == nil {
 		v.DescriptorSense = scsi.SetDescriptorSenseOn
