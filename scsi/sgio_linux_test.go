@@ -170,3 +170,24 @@ func TestSetDescriptorSenseOnFile(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Sanitizer opens the path for each call; a regular file is no SCSI disk.
+func TestSanitizerOnFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "sdz")
+	if err := os.WriteFile(p, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var s Sanitizer
+	if _, err := s.CryptoEraseSupport(p); err == nil || !strings.Contains(err.Error(), "SG_IO on "+p) {
+		t.Errorf("support: %v", err)
+	}
+	if _, err := s.SanitizeStatus(p); err == nil {
+		t.Error("status on a file")
+	}
+	if err := s.CryptoErase(p); err == nil {
+		t.Error("erase on a file")
+	}
+	if _, err := s.CryptoEraseSupport(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Error("missing path")
+	}
+}

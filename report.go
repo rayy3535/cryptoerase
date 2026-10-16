@@ -8,6 +8,7 @@ import (
 	"github.com/rayy3535/cryptoerase/ata"
 	"github.com/rayy3535/cryptoerase/nvme"
 	"github.com/rayy3535/cryptoerase/perc"
+	"github.com/rayy3535/cryptoerase/scsi"
 	"github.com/rayy3535/cryptoerase/tcg"
 )
 
@@ -113,6 +114,7 @@ type DriveRecord struct {
 	Attach *Attach        `json:"attach,omitempty"`
 	NVMe   *NVMeInfo      `json:"nvme,omitempty"`
 	ATA    *ATAInfo       `json:"ata,omitempty"`
+	SCSI   *SCSIInfo      `json:"scsi,omitempty"`
 	TCG    *TCGInfo       `json:"tcg,omitempty"`
 	Health *nvme.SmartLog `json:"health,omitempty"`
 	PERC   *PERCInfo      `json:"perc,omitempty"`
@@ -167,6 +169,14 @@ type NVMeInfo struct {
 	SecureEraseAppliesToAllNamespaces bool         `json:"secure_erase_applies_to_all_namespaces"`
 }
 
+// SCSIInfo is a SAS drive's erase-relevant capability.
+type SCSIInfo struct {
+	// SanitizeCryptoErase is what REPORT SUPPORTED OPERATION CODES says of
+	// SANITIZE, CRYPTOGRAPHIC ERASE: "supported", "not supported" or
+	// "unknown".
+	SanitizeCryptoErase string `json:"sanitize_crypto_erase"`
+}
+
 // ATAInfo is the drive's erase-relevant identification.
 type ATAInfo struct {
 	SanitizeFeatureSet bool         `json:"sanitize_feature_set"`
@@ -203,7 +213,9 @@ type DeviceStatus struct {
 	EstimatedCryptoEraseSecs *uint32             `json:"estimated_crypto_erase_s,omitempty"`
 	Format                   []FormatResult      `json:"format,omitempty"`
 	ATASanitize              *ata.SanitizeStatus `json:"ata_sanitize_status,omitempty"`
-	RescanError              string              `json:"rescan_error,omitempty"`
+	// SCSISanitize is the last SANITIZE state read with REQUEST SENSE.
+	SCSISanitize *scsi.SanitizeStatus `json:"scsi_sanitize_status,omitempty"`
+	RescanError  string               `json:"rescan_error,omitempty"`
 	// PERCErase is set when the RAID controller erased the drive.
 	PERCErase *PERCErase `json:"perc_erase,omitempty"`
 }

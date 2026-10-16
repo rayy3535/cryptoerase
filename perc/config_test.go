@@ -60,6 +60,11 @@ func TestParseVirtualDisksNone(t *testing.T) {
 	if err != nil || len(vds) != 0 {
 		t.Fatalf("%v %+v", err, vds)
 	}
+	// An HBA (HBA355i) has no virtual disks to list.
+	hba := `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Failure","Description":"Un-supported command"}}]}`
+	if vds, err := ParseVirtualDisks([]byte(hba)); err != nil || len(vds) != 0 {
+		t.Fatalf("HBA: %v %+v", err, vds)
+	}
 	bad := `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Failure","Description":"Controller not found"}}]}`
 	if _, err := ParseVirtualDisks([]byte(bad)); err == nil {
 		t.Fatal("failure accepted")

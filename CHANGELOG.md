@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.0 (2026-10-16)
+
+- **SAS drives on an HBA.** SAS drives the OS sees directly were `UNHANDLED`: "not a directly attached ATA device … SAS or other controller". Seen: three Seagate Nytro XS1920LE70134 SAS SSDs on a Dell HBA355i (mpt3sas). They are now erased with SCSI SANITIZE, service action CRYPTOGRAPHIC ERASE, sent through SG_IO by the new `scsi` code, with no outside tool:
+  - REPORT SUPPORTED OPERATION CODES tells whether the drive supports it (`scsi.sanitize_crypto_erase`). Without it an SSD is `FAIL` and a hard disk `UNHANDLED`; a drive that does not answer the report is `UNHANDLED`.
+  - REQUEST SENSE reads the sanitize state, in `--inventory` too. A drive left in sanitize failure mode is `FAIL`.
+  - Markers are written, SANITIZE runs with IMMED, REQUEST SENSE is polled until the drive no longer reports it in progress (`device_status.scsi_sanitize_status`), and the markers must all have changed.
+  - Only SAS end devices are sanitized. A RAID logical volume of another controller, or a Fibre Channel or iSCSI LUN, is still `UNHANDLED`.
+- **`--raid-reset` with an HBA.** perccli64 sees the HBA355i, but it answers the virtual disk listing with "Un-supported command"; the run reported a `RAID controller` record, "virtual disks: Failure: Un-supported command". That answer now means no virtual disks. The RAID reset also leaves alone any drive the OS already sees, whatever state the CLI shows.
+- `Options.SCSI` (`SCSIBackend`) replaces the SCSI backend for tests and library users.
+
 ## v0.7.3 (2026-10-16)
 
 - **PERC 11 non-RAID drives.** On a PERC H755 Front, the RAID reset deleted the virtual disk and set the four drives to non-RAID, but the drives were then taken for virtual disks: PERC 11 puts non-RAID drives on SCSI channel 2 (`0:2:0:0` …), where megaraid_sas otherwise puts virtual disks. The first drive, which reused the deleted virtual disk's name, failed with "PERC virtual disk still present after the RAID reset deleted it"; the others were `UNHANDLED`. A megaraid_sas disk that matches one of the controller's drives (by WWN or serial number) is now a drive; the channel decides only for a disk that matches none.

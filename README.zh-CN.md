@@ -14,7 +14,7 @@
 
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
-对 Linux 服务器上的每一块盘做加密擦除（cryptographic erase），并生成 JSON 证据报告。支持 NVMe、SATA，以及 Dell PERC 或 Broadcom MegaRAID 阵列卡后面的 SATA/SAS 盘。提供 Go 库和命令行工具。
+对 Linux 服务器上的每一块盘做加密擦除（cryptographic erase），并生成 JSON 证据报告。支持 NVMe、SATA、HBA 上的 SAS 盘，以及 Dell PERC 或 Broadcom MegaRAID 阵列卡后面的 SATA/SAS 盘。提供 Go 库和命令行工具。
 
 硬盘厂商和供应商：[检查硬盘是否支持加密擦除](docs/check-drives.zh-CN.md)，分步骤、只读。
 
@@ -135,7 +135,7 @@ esac
 | `perccli64` | Dell PERC 阵列卡 | Dell 官网 "PERC CLI" | `$PATH`、`/opt/MegaRAID/perccli`，或 `--raid-cli PATH` |
 | `storcli64` | Broadcom、LSI 或 OEM 品牌的 MegaRAID 阵列卡（perccli 看不到这些卡） | Broadcom 官网 "StorCLI" | `$PATH`、`/opt/MegaRAID/storcli`，或 `--raid-cli PATH` |
 
-- NVMe 盘两个程序都不需要，工具直接通过内核访问。AHCI 或 smartpqi 等 HBA 上的 SATA 盘只需要 hdparm。
+- NVMe 盘和 HBA 上的 SAS 盘两个程序都不需要，工具直接通过内核访问。AHCI 或 smartpqi 等 HBA 上的 SATA 盘只需要 hdparm。
 - `--raid-reset` 需要 hdparm 和阵列卡工具，因为它要暴露的盘事先在系统里看不到。
 - 缺少需要的程序时，运行会在改动任何东西之前停止：退出码 1，不生成报告，并提示缺哪个程序、哪块盘需要它。
 - 不需要：nvme-cli、sg3_utils、sdparm、smartmontools、sedutil-cli、MegaCli、arcconf。
@@ -149,11 +149,12 @@ esac
 |---|---|
 | NVMe | Sanitize，Crypto Erase（带加密擦除的 Format NVM 需加 `--allow-format`） |
 | SATA 固态盘或机械盘，直连或接在 HBA 上（AHCI、smartpqi 等） | ATA SANITIZE CRYPTO SCRAMBLE，前提是盘支持 |
+| HBA 上的 SAS 固态盘或机械盘（mpt3sas、smartpqi 等） | SCSI SANITIZE，CRYPTOGRAPHIC ERASE，前提是盘支持 |
 | PERC / MegaRAID 阵列卡后面的 SATA 或 SAS 盘（固态盘或机械盘） | 阵列卡自带的加密擦除，前提是阵列卡报告该盘支持 |
 
 只做加密擦除：不会退回到覆写、块擦除或填零。每块盘只有在盘或阵列卡报告成功，**并且**擦除前写入的 16 个随机标记在擦除后全部改变时才算通过。擦不了的盘报 `UNHANDLED` 或 `FAIL` 并写明原因，不会被悄悄跳过。
 
-不支持：不加密的机械盘、普通 HBA 上的 SAS 盘、PERC/MegaRAID 以外的 RAID 卡、已锁定的盘（TCG Opal 锁定区域、设置了 ATA 用户密码）、没有 namespace 的 NVMe 盘。
+不支持：不加密的机械盘、PERC/MegaRAID 以外的 RAID 卡上的逻辑卷、SAN 存储的 LUN、已锁定的盘（TCG Opal 锁定区域、设置了 ATA 用户密码）、没有 namespace 的 NVMe 盘。
 
 ## 文档
 

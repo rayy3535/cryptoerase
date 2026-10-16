@@ -20,7 +20,7 @@ This guide is for drive makers and used-drive suppliers who want to check, on th
 > [!IMPORTANT]
 > **Do not use USB enclosures or USB-to-SATA cables.** The tool cannot read a drive's erase capabilities over USB; such drives are reported `SKIPPED`.
 >
-> SAS drives must sit behind a Dell PERC or Broadcom MegaRAID controller; see [Appendix B](#appendix-b-drives-behind-a-raid-controller-including-sas). SAS drives on a plain SAS HBA are not supported.
+> SAS drives need a SAS HBA (e.g. Broadcom 9300/9400/9500 series, Dell HBA330/HBA355i) or a Dell PERC / Broadcom MegaRAID controller; see [Appendix B](#appendix-b-drives-behind-a-raid-controller-including-sas) for the latter.
 
 Making the USB stick: download the Ubuntu 24.04 LTS Desktop ISO from [ubuntu.com/download/desktop](https://ubuntu.com/download/desktop) and write it to the stick with [Rufus](https://rufus.ie) or [balenaEtcher](https://etcher.balena.io).
 
@@ -105,7 +105,8 @@ The `result=` on the last line sums up the machine: `PASS` when every drive othe
 | `firmware … is below …; upgrade firmware` | This firmware has a known erase defect | Update the firmware, then check again |
 | `removable or USB device` (`SKIPPED`) | The drive is attached over USB | Attach it to a motherboard SATA port or M.2 slot |
 | `in use by the running OS` | The system disk, or a drive opened in the file manager (mounted) | Ignore it for the system disk; for a drive under test, reboot, do not open it, and check again |
-| `not a directly attached ATA device` | A SAS drive, or a controller the tool does not know | SAS drives: see [Appendix B](#appendix-b-drives-behind-a-raid-controller-including-sas) |
+| `no SCSI SANITIZE CRYPTOGRAPHIC ERASE support` | The SAS SSD has no cryptographic erase | **Not supported** |
+| `not a directly attached ATA or SAS drive` | A RAID logical volume of a controller the tool does not handle, or a SAN volume | Put the drives on a SAS HBA, a motherboard port, or a PERC/MegaRAID controller |
 | `controller passes ATA commands through but does not return the drive's status` | The drive is on a RAID or HBA card that does not pass the drive's status back | Attach it to a motherboard SATA port |
 | `does not support non-RAID (JBOD) drives` | The RAID controller is too old (e.g. Dell PERC H710P): it cannot pass drives to the OS, nor crypto-erase them | Move the drives to a newer controller (e.g. PERC H730P) or a motherboard port and check again |
 | `rerun with --raid-reset`, `PERC virtual disk` | The drive is behind a RAID controller | See [Appendix B](#appendix-b-drives-behind-a-raid-controller-including-sas) |

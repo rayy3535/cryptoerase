@@ -29,6 +29,7 @@
 | `attach` | SCSI host driver and SCSI inquiry vendor/model (SCSI-class disks) |
 | `nvme` | VER, OACS, SANICAP, FNA, TNVMCAP, UNVMCAP, and the capability bits decoded from them |
 | `ata` | Sanitize capabilities from IDENTIFY word 59, security state from word 128, non-rotating flag |
+| `scsi` | SAS drives on an HBA: `sanitize_crypto_erase`, from REPORT SUPPORTED OPERATION CODES (`supported`, `not supported`, `unknown`) |
 | `tcg` | TCG Level 0 Discovery: SSCs, locking state, `media_encryption` |
 | `health` | NVMe SMART: critical warning, available spare, percentage used |
 | `perc` | Physical drives behind a RAID virtual disk, if a controller CLI is installed |
@@ -47,6 +48,7 @@
 
 - **NVMe Sanitize:** the Sanitize Status log fields `sstat`, `sprog`, `global_data_erased`, and `estimated_crypto_erase_s`.
 - **NVMe Format:** `format`, one entry per namespace with the NSID, LBA format and CDW10 issued.
+- **SAS on an HBA:** `scsi_sanitize_status`: the `state` read with REQUEST SENSE after the erase (`idle`, `failed`), and the `sense` key/ASC/ASCQ.
 - **SATA:** `ata_sanitize_status`; or, for a drive erased by its PERC/MegaRAID controller, `perc_erase`: `controller`, `slot`, `did`, `tool`, the `commands` run (planned in inventory mode), the `outcome` (`completed`, `failed` or `aborted`) and the controller log `event` it was read from, `reattached_as` when the disk came back under another name, and `recovery` when the drive rejected writes until a SANITIZE STATUS EXT was sent to it.
 - **All NVMe:** `rescan_error`, set if the namespace rescan after the erase failed.
 

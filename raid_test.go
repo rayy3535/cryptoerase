@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rayy3535/cryptoerase/perc"
+	"github.com/rayy3535/cryptoerase/scsi"
 )
 
 // fakeRAID is a PERC controller: deleting a virtual disk removes its SCSI
@@ -636,5 +637,24 @@ func TestRAIDResetKeepsPERC11NonRAID(t *testing.T) {
 	rr := rep.RAIDReset[0]
 	if rr.Skipped != "" || len(rr.Expose) != 2 {
 		t.Fatalf("%+v", rr)
+	}
+}
+
+// An HBA (HBA355i) passes every drive to the OS: the reset has nothing to
+// do, whatever state the CLI shows.
+func TestRAIDResetHBAVisibleDrives(t *testing.T) {
+	h := newHost(t)
+	h.addSCSI("sda", scsiSpec{vendor: "SEAGATE", model: "XS1920LE70134", driver: "mpt3sas", vpd80: "EXAMPLESAS0001",
+		sas: &fakeSASDisk{support: scsi.SupportYes}})
+	d := pd(":0", 3, "Onln", "-", "EXAMPLESAS0001", "")
+	d.Interface, d.Model = "SAS", "XS1920LE70134"
+	f := &fakeRAID{h: h, fail: map[string]error{}, ctrls: []perc.Controller{{Index: 0, Tool: "perccli64", Model: "HBA355i Front", Drives: []perc.Drive{d}}}}
+	rep := h.run(raidOptions(h, f, ModeErase))
+	if len(rep.RAIDReset) != 0 || len(f.calls) != 0 {
+		t.Fatalf("%+v calls %v", rep.RAIDReset, f.calls)
+	}
+	wantResult(t, rep, "sda", Pass, "")
+	if len(rep.Drives) != 1 {
+		t.Fatalf("%d records", len(rep.Drives))
 	}
 }

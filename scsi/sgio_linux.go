@@ -156,3 +156,36 @@ func SetDescriptorSenseOn(path string) (bool, error) {
 	defer d.Close()
 	return SetDescriptorSense(d.Exec)
 }
+
+// Sanitizer sends SCSI SANITIZE to disks by path, opening each one
+// read-only for every call.
+type Sanitizer struct{}
+
+func withDevice[T any](path string, fn func(Exec) (T, error)) (T, error) {
+	d, err := Open(path)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	defer d.Close()
+	return fn(d.Exec)
+}
+
+// CryptoEraseSupport asks the disk whether it supports SANITIZE,
+// CRYPTOGRAPHIC ERASE.
+func (Sanitizer) CryptoEraseSupport(path string) (Support, error) {
+	return withDevice(path, CryptoEraseSupported)
+}
+
+// SanitizeStatus reads the disk's sanitize state.
+func (Sanitizer) SanitizeStatus(path string) (*SanitizeStatus, error) {
+	return withDevice(path, SanitizeProgress)
+}
+
+// CryptoErase starts SANITIZE, CRYPTOGRAPHIC ERASE (IMMED).
+func (Sanitizer) CryptoErase(path string) error {
+	_, err := withDevice(path, func(exec Exec) (struct{}, error) {
+		return struct{}{}, StartSanitize(exec, SanitizeCryptoErase)
+	})
+	return err
+}

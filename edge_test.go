@@ -548,7 +548,7 @@ func TestSATAErrors(t *testing.T) {
 		t.Errorf("sdl %+v", d)
 	}
 	wantResult(t, rep, "sdh", Fail, "no ATA SANITIZE CRYPTO SCRAMBLE support")
-	wantResult(t, rep, "sdi", Unhandled, "not a directly attached ATA device")
+	wantResult(t, rep, "sdi", Unhandled, "not a directly attached ATA or SAS drive")
 	wantResult(t, rep, "sdj", Skipped, "zero size")
 	wantResult(t, rep, "sdk", Skipped, "USB")
 	for _, n := range []string{"sda", "sdb", "sdd", "sdh", "sdk"} {

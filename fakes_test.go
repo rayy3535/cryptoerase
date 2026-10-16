@@ -23,6 +23,7 @@ import (
 	"github.com/rayy3535/cryptoerase/ata"
 	"github.com/rayy3535/cryptoerase/nvme"
 	"github.com/rayy3535/cryptoerase/perc"
+	"github.com/rayy3535/cryptoerase/scsi"
 )
 
 const diskSize = 64 << 20
@@ -37,6 +38,7 @@ type testHost struct {
 	nvmes map[string]*fakeNVMe
 	ata   *fakeATA
 	perc  *fakePERC
+	scsi  *fakeSCSI
 	// concurrency probe
 	active, peak atomic.Int32
 }
@@ -46,7 +48,7 @@ func newHost(t *testing.T) *testHost {
 	root := t.TempDir()
 	h := &testHost{
 		t: t, sys: filepath.Join(root, "sys"), proc: filepath.Join(root, "proc"), dev: filepath.Join(root, "dev"),
-		nvmes: map[string]*fakeNVMe{}, ata: &fakeATA{disks: map[string]*fakeATADisk{}}, perc: &fakePERC{},
+		nvmes: map[string]*fakeNVMe{}, ata: &fakeATA{disks: map[string]*fakeATADisk{}}, perc: &fakePERC{}, scsi: &fakeSCSI{disks: map[string]*fakeSASDisk{}},
 	}
 	for _, d := range []string{"sys/class/nvme", "sys/block", "sys/class/block", "sys/class/scsi_host", "sys/class/dmi/id", "proc/sys/kernel", "dev"} {
 		must(t, os.MkdirAll(filepath.Join(root, d), 0o755))
@@ -132,6 +134,7 @@ type scsiSpec struct {
 	host                  string       // SCSI host; default: one per disk
 	hctl                  string       // SCSI address; default "0:0:0:<name>"
 	vpd80                 string       // unit serial number (VPD page 0x80), if set
+	sas                   *fakeSASDisk // set: a SAS end device answering SCSI SANITIZE
 }
 
 func (h *testHost) addSCSI(name string, s scsiSpec) {
@@ -147,6 +150,9 @@ func (h *testHost) addSCSI(name string, s scsiSpec) {
 		addr = "0:0:0:" + name
 	}
 	devpath := filepath.Join(h.sys, "devices/pci0000:00", host, "target0:0:0", addr)
+	if s.sas != nil {
+		devpath = filepath.Join(h.sys, "devices/pci0000:00", host, "port-0:0/end_device-0:0/target0:0:0", addr)
+	}
 	if s.usb {
 		devpath = filepath.Join(h.sys, "devices/pci0000:00/usb1", host, "target0:0:0", addr)
 	}
@@ -172,6 +178,99 @@ func (h *testHost) addSCSI(name string, s scsiSpec) {
 		s.ata.host = h
 		h.ata.add(path, s.ata)
 	}
+	if s.sas != nil {
+		s.sas.path, s.sas.host = path, h
+		h.scsi.mu.Lock()
+		h.scsi.disks[path] = s.sas
+		h.scsi.mu.Unlock()
+	}
+}
+
+// ---------------------------------------------------------------- SCSI ---
+
+// fakeSASDisk answers REPORT SUPPORTED OPERATION CODES, REQUEST SENSE and
+// SANITIZE like a SAS drive.
+type fakeSASDisk struct {
+	host      *testHost
+	path      string
+	support   scsi.Support
+	supErr    error
+	behaviour string // ok | noop (reports success, changes nothing) | fail | reject
+	failed    bool   // a previous sanitize failed
+	ua        int    // unit attentions pending before the real state
+
+	mu      sync.Mutex
+	pending int
+	calls   []string
+}
+
+type fakeSCSI struct {
+	mu    sync.Mutex
+	disks map[string]*fakeSASDisk
+}
+
+func (s *fakeSCSI) disk(dev string) (*fakeSASDisk, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.disks[dev]
+	if !ok {
+		return nil, fmt.Errorf("SG_IO on %s: inappropriate ioctl for device", dev)
+	}
+	return d, nil
+}
+
+func (s *fakeSCSI) CryptoEraseSupport(dev string) (scsi.Support, error) {
+	d, err := s.disk(dev)
+	if err != nil {
+		return scsi.SupportUnknown, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls = append(d.calls, "support")
+	return d.support, d.supErr
+}
+
+func (s *fakeSCSI) SanitizeStatus(dev string) (*scsi.SanitizeStatus, error) {
+	d, err := s.disk(dev)
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls = append(d.calls, "status")
+	switch {
+	case d.ua > 0:
+		d.ua--
+		return &scsi.SanitizeStatus{State: scsi.SanitizeOther, Sense: "6/29/00"}, nil
+	case d.failed:
+		return &scsi.SanitizeStatus{State: scsi.SanitizeFailed, Sense: "3/31/03"}, nil
+	case d.pending > 0:
+		d.pending--
+		return &scsi.SanitizeStatus{State: scsi.SanitizeInProgress, Progress: 0xffff - d.pending*0x1000, Sense: "2/04/1b"}, nil
+	}
+	return &scsi.SanitizeStatus{State: scsi.SanitizeIdle, Sense: "0/00/00"}, nil
+}
+
+func (s *fakeSCSI) CryptoErase(dev string) error {
+	d, err := s.disk(dev)
+	if err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.calls = append(d.calls, "sanitize")
+	switch d.behaviour {
+	case "reject":
+		return errors.New("SANITIZE: check condition: sense key 0x5, ASC/ASCQ 24/00")
+	case "noop":
+		d.pending = 1
+	case "fail":
+		d.pending, d.failed = 1, true
+	default:
+		fill(d.host.t, d.path, false)
+		d.pending = 2
+	}
+	return nil
 }
 
 // mount marks partition <disk>1 as mounted on /.
@@ -206,6 +305,7 @@ func (h *testHost) options(mode Mode) Options {
 		NamespaceID:     func(string) (uint32, error) { return 0, errors.New("unexpected ioctl") },
 		ATA:             h.ata,
 		PERC:            h.perc,
+		SCSI:            h.scsi,
 		DescriptorSense: h.ata.setDescriptorSense,
 	}
 }
