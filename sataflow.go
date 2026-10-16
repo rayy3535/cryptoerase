@@ -38,7 +38,7 @@ func (r *runner) scsiDrive(ctx context.Context, name string) *DriveRecord {
 	if r.inUse[name] {
 		return r.done(rec, Unhandled, "in use by the running OS")
 	}
-	if r.isRAIDVirtualDisk(name, model, driver) {
+	if r.isRAIDVirtualDisk(ctx, name, model, driver) {
 		return r.percDisk(ctx, rec, driver)
 	}
 	isATA := false

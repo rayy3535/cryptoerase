@@ -112,3 +112,20 @@ func TestListRunsTheTool(t *testing.T) {
 		t.Fatalf("empty tool: %v", err)
 	}
 }
+
+// PERC 11 lists a non-RAID drive as state Onln, type JBOD (seen: PERC H755).
+func TestNonRAIDType(t *testing.T) {
+	out := `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success"},"Response Data":{"Drive Information":[` +
+		`{"EID:Slt":"252:0","DID":3,"State":"Onln","DG":"-","Size":"894.252 GB","Intf":"SATA","Med":"SSD","SED":"N","PI":"N","SeSz":"512B","Model":"INTEL SSDSC2KB960GZ","Sp":"U","Type":"JBOD"},` +
+		`{"EID:Slt":"252:1","DID":4,"State":"Onln","DG":0,"Intf":"SATA","Med":"SSD","Model":"INTEL SSDSC2KB960GZ","Type":"-"},` +
+		`{"EID:Slt":"252:2","DID":5,"State":"JBOD","DG":"-","Intf":"SATA","Med":"SSD","Model":"INTEL SSDSC2KB960GZ"}]}}]}`
+	drives, err := Parse([]byte(out), "perccli64")
+	if err != nil || len(drives) != 3 {
+		t.Fatalf("%v %+v", err, drives)
+	}
+	for i, want := range []bool{true, false, true} {
+		if got := drives[i].NonRAID(); got != want {
+			t.Errorf("%s: non-RAID %v", drives[i].Slot, got)
+		}
+	}
+}

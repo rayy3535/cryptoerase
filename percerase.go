@@ -61,7 +61,7 @@ func (r *runner) percEraseTarget(ctx context.Context, rec *DriveRecord, name str
 	}
 	slot := perc.Path(c.Index, d.Slot)
 	switch {
-	case !strings.EqualFold(d.State, "JBOD"):
+	case !d.NonRAID():
 		return nil, fmt.Errorf("controller drive %s is in state %q, not JBOD (non-RAID)", slot, d.State)
 	case !d.CryptoErase:
 		return nil, fmt.Errorf("the controller does not report drive %s as cryptographic-erase capable", slot)

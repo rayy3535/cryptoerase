@@ -56,6 +56,7 @@ func (f *fakeRAID) SetGood(_ context.Context, c int, slot string) (string, error
 		f.media[slot] = b
 		f.h.removeSCSI(name)
 		f.setState(slot, "UGood")
+		f.setType(slot, "-")
 		f.event("State change on "+pdName(f.drive(slot))+" from JBOD(40) to UNCONFIGURED_GOOD(0)", f.drive(slot).DID)
 	})
 }
@@ -475,5 +476,43 @@ func TestPERCEraseUnblockedBySanitizeStatus(t *testing.T) {
 	}
 	if slices.Contains(d.calls, "crypto-scramble") {
 		t.Fatal("SANITIZE sent through hdparm")
+	}
+}
+
+// PERC 11 (seen: PERC H755): a non-RAID drive sits on SCSI channel 2, where
+// megaraid_sas otherwise puts virtual disks, and the controller shows it as
+// state Onln, type JBOD. The controller's configuration says it is a drive,
+// and the controller erases it.
+func TestPERC11NonRAIDDrive(t *testing.T) {
+	h := newHost(t)
+	words := ataWords("INTEL SSDSC2KB960GZ", "EXAMPLEINTEL0001", "7CV1DL73", true, false)
+	h.addSCSI("sda", scsiSpec{vendor: "ATA", model: "INTEL SSDSC2KB96", driver: "megaraid_sas", hctl: "0:2:0:0",
+		vpd80: "EXAMPLEINTEL0001", ata: &fakeATADisk{words: words, behaviour: "noregs"}})
+	fill(t, filepath.Join(h.dev, "sda"), false)
+	d := pd("252:0", 3, "Onln", "-", "EXAMPLEINTEL0001", "")
+	d.Type, d.CryptoErase, d.Model = "JBOD", true, "INTEL SSDSC2KB960GZ"
+	f := &fakeRAID{
+		h:       h,
+		perc11:  true,
+		ctrls:   []perc.Controller{{Index: 0, Tool: "perccli64", Model: "PERC H755 Front", Personality: "RAID-Mode", JBODNote: "Controller does not support JBOD", Drives: []perc.Drive{d}}},
+		fail:    map[string]error{},
+		good:    map[string]string{"252:0": "sda"},
+		media:   map[string][]byte{},
+		outcome: map[string]string{},
+	}
+	f.jbod = map[string]func(){"252:0": func() {
+		h.addSCSI("sdb", scsiSpec{vendor: "ATA", model: "INTEL SSDSC2KB96", driver: "megaraid_sas", hctl: "0:2:0:0",
+			vpd80: "EXAMPLEINTEL0001", ata: &fakeATADisk{words: words, behaviour: "noregs"}})
+		must(t, os.WriteFile(filepath.Join(h.dev, "sdb"), f.media["252:0"], 0o644))
+		f.good["252:0"] = "sdb"
+	}}
+	rep := h.run(percOptions(h, f, ModeErase))
+	r := drive(t, rep, "sda")
+	if r.Result != Pass || r.DeviceStatus == nil || r.DeviceStatus.PERCErase == nil {
+		t.Fatalf("%s %q", r.Result, r.Reason)
+	}
+	want := "perccli64 /c0/e252/s0 set good force|perccli64 /c0/e252/s0 start erase crypto|perccli64 /c0/e252/s0 set jbod"
+	if got := strings.Join(f.calls, "|"); got != want {
+		t.Fatalf("calls %s", got)
 	}
 }
