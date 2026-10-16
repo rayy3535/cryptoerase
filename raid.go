@@ -135,6 +135,8 @@ func (r *runner) planRAID(c perc.Controller, megaraidInUse bool) *RAIDReset {
 		case d.Foreign():
 			rr.Skipped = fmt.Sprintf("drive %s carries a foreign configuration; import or clear it first (%s %s/fall show)", d.Slot, c.Tool, fmt.Sprintf("/c%d", c.Index))
 			return rr
+		case d.NonRAID():
+			// Already visible to the OS; erased like any other disk.
 		case state == "ONLN":
 			dg := d.DriveGroup()
 			if keepDG[dg] {
@@ -150,8 +152,6 @@ func (r *runner) planRAID(c perc.Controller, megaraidInUse bool) *RAIDReset {
 		case state == "DHS" || state == "GHS":
 			rr.hotSpares = append(rr.hotSpares, d)
 			rr.Expose = append(rr.Expose, d)
-		case state == "JBOD":
-			// Already visible to the OS; erased like any other disk.
 		default:
 			rr.Skipped = fmt.Sprintf("drive %s is in state %q; resolve it before resetting RAID", d.Slot, d.State)
 			return rr
@@ -251,7 +251,7 @@ func (r *runner) jbodDrives(ctx context.Context, rs RAIDResetter, c int) map[str
 			continue
 		}
 		for _, d := range ctrl.Drives {
-			if strings.EqualFold(strings.TrimSpace(d.State), "JBOD") {
+			if d.NonRAID() {
 				out[d.Slot] = true
 			}
 		}

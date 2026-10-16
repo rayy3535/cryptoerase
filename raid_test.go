@@ -39,6 +39,8 @@ type fakeRAID struct {
 
 	// autoJBOD: turning JBOD mode on sets every UGood drive to JBOD.
 	autoJBOD bool
+	// perc11: a non-RAID drive shows as state Onln, type JBOD.
+	perc11 bool
 }
 
 func (f *fakeRAID) List(context.Context) ([]perc.Drive, error) {
@@ -70,6 +72,18 @@ func (f *fakeRAID) setState(slot, state string) {
 		for j := range f.ctrls[i].Drives {
 			if d := &f.ctrls[i].Drives[j]; d.Slot == slot {
 				d.State, d.DG = state, "-"
+			}
+		}
+	}
+}
+
+func (f *fakeRAID) setType(slot, typ string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.ctrls {
+		for j := range f.ctrls[i].Drives {
+			if d := &f.ctrls[i].Drives[j]; d.Slot == slot {
+				d.Type = typ
 			}
 		}
 	}
@@ -108,6 +122,10 @@ func (f *fakeRAID) DeleteHotSpare(_ context.Context, c int, slot string) (string
 func (f *fakeRAID) SetJBOD(_ context.Context, c int, slot string) (string, error) {
 	return f.run(fmt.Sprintf("perccli64 %s set jbod", perc.Path(c, slot)), func() {
 		f.setState(slot, "JBOD")
+		if f.perc11 {
+			f.setState(slot, "Onln")
+			f.setType(slot, "JBOD")
+		}
 		if expose := f.jbod[slot]; expose != nil {
 			expose()
 		}
@@ -576,12 +594,26 @@ func TestHiddenDrivesNoJBODWithoutReset(t *testing.T) {
 func TestRAIDResetH755(t *testing.T) {
 	h, f := raidHost(t)
 	f.ctrls[0].JBOD, f.ctrls[0].JBODNote, f.ctrls[0].Personality, f.ctrls[0].Model = "", "Controller does not support JBOD", "RAID-Mode", "PERC H755 Front"
+	// Its non-RAID drives come up on channel 2, like virtual disks, as state
+	// Onln, type JBOD.
+	f.perc11 = true
+	f.jbod = map[string]func(){
+		"64:0": func() {
+			h.addSCSI("sdb", scsiSpec{vendor: "ATA", model: "SAMSUNG MZ7LH960", driver: "megaraid_sas", hctl: "0:2:1:0", wwid: "naa.5002538e00000001",
+				ata: &fakeATADisk{words: ataWords("SAMSUNG MZ7LH960HAJR-00005", "EXAMPLESATA0001", "HXT7904Q", true, false)}})
+		},
+		"64:1": func() {
+			h.addSCSI("sdc", scsiSpec{vendor: "ATA", model: "SAMSUNG MZ7LH960", driver: "megaraid_sas", hctl: "0:2:2:0", vpd80: "EXAMPLESATA0002",
+				ata: &fakeATADisk{words: ataWords("SAMSUNG MZ7LH960HAJR-00005", "EXAMPLESATA0002", "HXT7904Q", true, false)}})
+		},
+	}
 	rep := h.run(raidOptions(h, f, ModeErase))
 	want := "perccli64 /c0/v0 delete force|perccli64 /c0/e64/s0 set jbod|perccli64 /c0/e64/s1 set jbod"
 	if rr := rep.RAIDReset[0]; rr.Skipped != "" || strings.Join(f.calls, "|") != want {
 		t.Fatalf("%+v calls %v", rr, f.calls)
 	}
 	wantResult(t, rep, "sdb", Pass, "")
+	wantResult(t, rep, "sdc", Pass, "")
 }
 
 // A controller that refuses "set jbod" as an invalid command, without
@@ -591,4 +623,18 @@ func TestRAIDResetSetJBODRefused(t *testing.T) {
 	f.fail["perccli64 /c0/e64/s0 set jbod"] = errors.New(`perccli64 /c0/e64/s0 set jbod: Failure Set Drive JBOD Failed. [{"ErrMsg":"command invalid "}]`)
 	rep := h.run(raidOptions(h, f, ModeErase))
 	wantResult(t, rep, "s0", Fail, "the controller may have no non-RAID mode; drives not set to non-RAID stay unconfigured and still hold their data")
+}
+
+// A PERC 11 drive that is already non-RAID (state Onln, type JBOD, in no
+// drive group) needs nothing from the reset.
+func TestRAIDResetKeepsPERC11NonRAID(t *testing.T) {
+	h, f := raidHost(t)
+	d := pd("64:4", 4, "Onln", "-", "EXAMPLESATA0005", "5002538E00000005")
+	d.Type = "JBOD"
+	f.ctrls[0].Drives = append(f.ctrls[0].Drives, d)
+	rep := h.run(raidOptions(h, f, ModeInventory))
+	rr := rep.RAIDReset[0]
+	if rr.Skipped != "" || len(rr.Expose) != 2 {
+		t.Fatalf("%+v", rr)
+	}
 }

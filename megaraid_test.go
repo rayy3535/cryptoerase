@@ -3,6 +3,7 @@
 package cryptoerase
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -111,7 +112,7 @@ func TestRAIDVirtualDiskByChannel(t *testing.T) {
 	h.addSCSI("sdc", scsiSpec{vendor: "SEAGATE", model: "ST1200MM0099", driver: "mpt3sas", hctl: "0:0:5:0"})
 	r := &runner{opts: Options{SysfsRoot: h.sys}}
 	for name, want := range map[string]bool{"sda": true, "sdb": false, "sdc": false} {
-		if got := r.isRAIDVirtualDisk(name, readTrim(filepath.Join(h.sys, "block", name, "device", "model")), r.scsiDriver(name)); got != want {
+		if got := r.isRAIDVirtualDisk(context.Background(), name, readTrim(filepath.Join(h.sys, "block", name, "device", "model")), r.scsiDriver(name)); got != want {
 			t.Errorf("%s: virtual disk %v", name, got)
 		}
 	}

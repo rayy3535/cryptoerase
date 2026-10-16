@@ -46,16 +46,27 @@ func (r *runner) channelTarget(name string) (channel, target int, ok bool) {
 }
 
 // isRAIDVirtualDisk reports whether a SCSI disk is a RAID virtual disk: a
-// Dell PERC virtual disk reports the controller as its model, and
-// megaraid_sas puts virtual disks on channels 2 and up. Physical drives the
-// controller passes through (JBOD, non-RAID) report their own vendor and
-// model.
-func (r *runner) isRAIDVirtualDisk(name, model, driver string) bool {
+// Dell PERC virtual disk reports the controller as its model. Otherwise a
+// megaraid_sas disk that matches one of the controller's drives (by WWN or
+// serial number) is a drive the controller passes through. Failing that,
+// megaraid_sas puts virtual disks on channels 2 and up; PERC 11 firmware
+// puts non-RAID drives there too (seen: PERC H755), which is why the
+// controller's configuration is asked first.
+func (r *runner) isRAIDVirtualDisk(ctx context.Context, name, model, driver string) bool {
 	if strings.Contains(model, "PERC") {
 		return true
 	}
 	if driver != "megaraid_sas" {
 		return false
+	}
+	if ctrls, err := r.controllerConfig(ctx); err == nil {
+		for _, c := range ctrls {
+			for _, d := range c.Drives {
+				if r.blockMatchesDrive(name, d) {
+					return false
+				}
+			}
+		}
 	}
 	c, _, ok := r.channelTarget(name)
 	return ok && c >= megaraidPDChannels
@@ -155,4 +166,15 @@ func (r *runner) percPhysical(ctx context.Context, rec *DriveRecord, name, drive
 	rec.NISTMethod = "Purge"
 	rec.Scope = "all user data on the device"
 	return r.percErase(ctx, rec, name, driver, false, t)
+}
+
+// controllerConfig reads the RAID controllers' configuration once per run;
+// nil without error when the backend cannot.
+func (r *runner) controllerConfig(ctx context.Context) ([]perc.Controller, error) {
+	cl, ok := r.opts.PERC.(controllerLister)
+	if !ok {
+		return nil, nil
+	}
+	r.ctrlOnce.Do(func() { r.ctrls, r.ctrlErr = cl.Controllers(ctx) })
+	return r.ctrls, r.ctrlErr
 }

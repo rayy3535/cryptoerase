@@ -31,13 +31,16 @@ type Drive struct {
 	Slot       string `json:"slot"`
 	DID        *int   `json:"did,omitempty"`
 	State      string `json:"state,omitempty"`
-	DG         any    `json:"dg,omitempty"`
-	Interface  string `json:"intf,omitempty"`
-	Media      string `json:"media,omitempty"`
-	SED        string `json:"sed,omitempty"`
-	Model      string `json:"model,omitempty"`
-	Serial     string `json:"serial,omitempty"`
-	WWN        string `json:"wwn,omitempty"`
+	// Type is the drive's type column: "JBOD" for a non-RAID drive on
+	// controllers that show it as State Onln (PERC 11), else "-".
+	Type      string `json:"type,omitempty"`
+	DG        any    `json:"dg,omitempty"`
+	Interface string `json:"intf,omitempty"`
+	Media     string `json:"media,omitempty"`
+	SED       string `json:"sed,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Serial    string `json:"serial,omitempty"`
+	WWN       string `json:"wwn,omitempty"`
 	// CryptoErase is the controller's "Cryptographic Erase Capable": the
 	// controller can crypto-erase the drive itself (ISE or SED drives).
 	CryptoErase bool `json:"crypto_erase_capable,omitempty"`
@@ -155,6 +158,7 @@ func Parse(out []byte, tool string) ([]Drive, error) {
 				d.DID = &i
 			}
 			d.State, _ = str(m["State"])
+			d.Type, _ = str(m["Type"])
 			d.DG = m["DG"]
 			d.Interface, _ = str(m["Intf"])
 			d.Media, _ = str(m["Med"])
@@ -204,4 +208,11 @@ func walk(v any, fn func(map[string]any)) {
 			walk(c, fn)
 		}
 	}
+}
+
+// NonRAID reports whether the controller passes the drive to the OS as a
+// non-RAID (JBOD) drive: state JBOD, or type JBOD (PERC 11 shows non-RAID
+// drives as state Onln, type JBOD).
+func (d Drive) NonRAID() bool {
+	return strings.EqualFold(strings.TrimSpace(d.State), "JBOD") || strings.EqualFold(strings.TrimSpace(d.Type), "JBOD")
 }

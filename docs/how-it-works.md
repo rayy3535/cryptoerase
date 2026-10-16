@@ -84,7 +84,9 @@ The report lists every command run (or, with `--inventory`, planned) under `raid
 
 ### Telling drives from virtual disks
 
-megaraid_sas puts virtual disks on SCSI channel 2 and above (`0:2:0:0`), with the controller as their model (`PERC H730P Mini`). A drive the controller passes through (JBOD, non-RAID) is on channel 0 or 1, with its own vendor and model, and its SCSI target is its controller device ID (DID).
+A Dell PERC virtual disk has the controller as its model (`PERC H730P Mini`). Otherwise a disk on megaraid_sas that matches one of the controller's drives (below) is a drive the controller passes through (JBOD, non-RAID), with its own vendor and model. Only a disk that matches none is judged by its SCSI channel: megaraid_sas puts virtual disks on channel 2 and above (`0:2:0:0`), and on PERC 9 and the SAS3108 pass-through drives on channel 0 or 1, with the controller device ID (DID) as SCSI target. PERC 11 (seen: H755) puts non-RAID drives on channel 2 as well, numbered from target 0, so the channel alone would take them for virtual disks.
+
+A non-RAID drive shows in the controller CLI as state `JBOD`, or, on PERC 11, as state `Onln` with type `JBOD`.
 
 A block device is matched to its controller slot in this order:
 1. by WWN;

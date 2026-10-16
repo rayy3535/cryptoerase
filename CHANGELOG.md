@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.3 (2026-10-16)
+
+- **PERC 11 non-RAID drives.** On a PERC H755 Front, the RAID reset deleted the virtual disk and set the four drives to non-RAID, but the drives were then taken for virtual disks: PERC 11 puts non-RAID drives on SCSI channel 2 (`0:2:0:0` …), where megaraid_sas otherwise puts virtual disks. The first drive, which reused the deleted virtual disk's name, failed with "PERC virtual disk still present after the RAID reset deleted it"; the others were `UNHANDLED`. A megaraid_sas disk that matches one of the controller's drives (by WWN or serial number) is now a drive; the channel decides only for a disk that matches none.
+- PERC 11 lists a non-RAID drive as state `Onln`, type `JBOD`, not as state `JBOD`. The drive's type is now read (`perc.Drive.Type`) and counts: the controller erase accepts such a drive, and the RAID reset leaves it alone.
+
 ## v0.7.2 (2026-10-16)
 
 - **PERC H755 taken for a controller without non-RAID drives.** 0.7.1 judged that from `/cN show jbod` answering "Controller does not support JBOD". The PERC H755 (FW 5.160.02-3552) answers the same, as it has no controller-wide JBOD switch, yet supports non-RAID drives; `--raid-reset` left it unchanged and its virtual disk `UNHANDLED`. A controller now counts as having no non-RAID mode only if `show all` says `Support JBOD = No`, or if, besides that `show jbod` answer, it reports no personality and `Support Drive Crypto Erase = No`, as the PERC H710P does. A controller with a personality (`Current Personality = RAID-Mode`) is taken to support non-RAID drives. The reason names the evidence.
