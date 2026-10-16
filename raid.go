@@ -163,7 +163,7 @@ func (r *runner) planRAID(c perc.Controller, megaraidInUse bool) *RAIDReset {
 		}
 		return rr
 	}
-	if len(rr.Expose) > 0 && strings.EqualFold(c.JBODSupport, "No") {
+	if no, _ := c.NoNonRAID(); no && len(rr.Expose) > 0 {
 		rr.Skipped = noJBODReason(c)
 		return rr
 	}
@@ -229,7 +229,7 @@ func (r *runner) applyRAID(ctx context.Context, rs RAIDResetter, rr *RAIDReset) 
 	for _, d := range rr.Expose {
 		if already[d.Slot] {
 			r.log.Info("raid reset", "controller", rr.Controller, "drive", d.Slot, "detail", "JBOD since JBOD mode was turned on")
-		} else if !step(rs.SetJBOD(ctx, rr.Controller, d.Slot)) {
+		} else if cmd, err := rs.SetJBOD(ctx, rr.Controller, d.Slot); !step(cmd, jbodRefused(err)) {
 			return exposed
 		}
 		exposed[d.Slot] = true
@@ -409,9 +409,19 @@ func controllerName(c perc.Controller) string {
 // noJBODReason says why the drives of a controller without non-RAID support
 // cannot be erased.
 func noJBODReason(c perc.Controller) string {
-	s := controllerName(c) + " does not support non-RAID (JBOD) drives, so its drives cannot be passed to the OS to be erased and verified; Dell PERC 8 (H710, H710P, H810) and older lack it"
+	_, evidence := c.NoNonRAID()
+	s := controllerName(c) + " has no non-RAID (JBOD) mode (" + evidence + "), so its drives cannot be passed to the OS to be erased and verified, as on Dell PERC 8 (H710, H710P, H810)"
 	if strings.EqualFold(c.DriveCryptoErase, "No") {
-		s += ". It cannot crypto-erase drives either (Support Drive Crypto Erase = No). Move the drives to a controller that can (e.g. PERC H730P) or to a motherboard port"
+		s += ". It cannot crypto-erase drives either. Move the drives to a controller that can (e.g. PERC H730P) or to a motherboard port"
 	}
 	return s
+}
+
+// jbodRefused explains a "set jbod" the controller refused as an invalid
+// command: it may have no non-RAID mode that the configuration read showed.
+func jbodRefused(err error) error {
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "command invalid") {
+		return fmt.Errorf("%w (the controller may have no non-RAID mode; drives not set to non-RAID stay unconfigured and still hold their data)", err)
+	}
+	return err
 }
