@@ -43,14 +43,21 @@ type Controller struct {
 	// cannot be set to JBOD (non-RAID); Broadcom-branded and OEM controllers
 	// ship with it off.
 	JBOD string `json:"jbod,omitempty"`
-	// JBODSupport is "Yes", "No", or empty when not reported: "Support
-	// JBOD" from "/cN show all", or "No" when "/cN show jbod" answers
-	// "Controller does not support JBOD". Controllers without it (Dell
-	// PERC 8 and older, e.g. H710P) cannot pass drives to the OS at all.
+	// JBODSupport is "Support JBOD" from "/cN show all": "Yes", "No", or
+	// empty when not reported (Dell PERCs do not report it).
 	JBODSupport string `json:"jbod_support,omitempty"`
+	// JBODNote is the answer of "/cN show jbod" when it has no mode, e.g.
+	// "Controller does not support JBOD". Both the PERC H710P, which has no
+	// non-RAID drives, and the PERC H755, which has them, answer so: it
+	// only says that there is no controller-wide JBOD switch.
+	JBODNote string `json:"jbod_note,omitempty"`
 	// DriveCryptoErase is "Support Drive Crypto Erase" from "/cN show all":
 	// whether the controller can crypto-erase drives at all.
 	DriveCryptoErase string `json:"drive_crypto_erase_support,omitempty"`
+	// Personality is "Current Personality" from "/cN show all"
+	// ("RAID-Mode", "HBA-Mode"). Controllers that have it (PERC 9 and
+	// later) support non-RAID drives.
+	Personality string `json:"personality,omitempty"`
 	// Model and Firmware identify the controller ("/cN show all").
 	Model    string `json:"model,omitempty"`
 	Firmware string `json:"firmware,omitempty"`
@@ -141,21 +148,41 @@ func (l *Lister) Controllers(ctx context.Context) ([]Controller, error) {
 		c := &ctrls[i]
 		if _, doc, err := l.doJSON(ctx, fmt.Sprintf("/c%d", c.Index), "show", "all"); err == nil {
 			info := ParseControllerInfo(doc)
-			c.Model, c.Firmware, c.JBODSupport, c.DriveCryptoErase = info.Model, info.Firmware, info.JBODSupport, info.DriveCryptoErase
+			c.Model, c.Firmware, c.JBODSupport, c.DriveCryptoErase, c.Personality = info.Model, info.Firmware, info.JBODSupport, info.DriveCryptoErase, info.Personality
 		}
 		var err error
 		c.JBOD, err = l.JBODMode(ctx, c.Index)
 		var ce *CommandError
 		if errors.As(err, &ce) && strings.Contains(strings.ToLower(ce.Detail), "does not support jbod") {
-			c.JBODSupport = "No"
+			c.JBODNote = "Controller does not support JBOD"
 		}
 	}
 	return ctrls, nil
 }
 
+// NoNonRAID reports whether controller c cannot pass drives to the OS as
+// non-RAID (JBOD) drives, and on what evidence:
+//   - "Support JBOD = No";
+//   - or, with no personality and no "Support JBOD = Yes", "show jbod"
+//     answering "Controller does not support JBOD" together with "Support
+//     Drive Crypto Erase = No". This is the PERC H710P (PERC 8). The PERC
+//     H755 gives the same "show jbod" answer but has a personality and
+//     supports non-RAID drives.
+func (c Controller) NoNonRAID() (bool, string) {
+	switch {
+	case strings.EqualFold(c.JBODSupport, "No"):
+		return true, "Support JBOD = No"
+	case c.Personality != "" || strings.EqualFold(c.JBODSupport, "Yes"):
+		return false, ""
+	case c.JBODNote != "" && strings.EqualFold(c.DriveCryptoErase, "No"):
+		return true, fmt.Sprintf("show jbod: %q, Support Drive Crypto Erase = No, no personality", c.JBODNote)
+	}
+	return false, ""
+}
+
 // ControllerInfo is what "/cN show all J" says about the controller.
 type ControllerInfo struct {
-	Model, Firmware, JBODSupport, DriveCryptoErase string
+	Model, Firmware, JBODSupport, DriveCryptoErase, Personality string
 }
 
 // ParseControllerInfo reads the model ("Basics" / "Model", or "Product
@@ -194,6 +221,7 @@ func ParseControllerInfo(doc *jsonDoc) ControllerInfo {
 		info.Firmware = sub(rd, "Version", "Firmware Version")
 		info.JBODSupport = anywhere(rd, "Support JBOD")
 		info.DriveCryptoErase = anywhere(rd, "Support Drive Crypto Erase")
+		info.Personality = anywhere(rd, "Current Personality")
 	}
 	return info
 }

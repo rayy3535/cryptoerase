@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.2 (2026-10-16)
+
+- **PERC H755 taken for a controller without non-RAID drives.** 0.7.1 judged that from `/cN show jbod` answering "Controller does not support JBOD". The PERC H755 (FW 5.160.02-3552) answers the same, as it has no controller-wide JBOD switch, yet supports non-RAID drives; `--raid-reset` left it unchanged and its virtual disk `UNHANDLED`. A controller now counts as having no non-RAID mode only if `show all` says `Support JBOD = No`, or if, besides that `show jbod` answer, it reports no personality and `Support Drive Crypto Erase = No`, as the PERC H710P does. A controller with a personality (`Current Personality = RAID-Mode`) is taken to support non-RAID drives. The reason names the evidence.
+- A `set jbod` that the controller refuses as `command invalid` now says that the controller may have no non-RAID mode, and that drives not yet set to non-RAID stay unconfigured and still hold their data.
+
 ## v0.7.1 (2026-10-12)
 
 - **Controllers without non-RAID support.** On a PowerEdge R630 with a PERC H710P Mini (firmware 3.131.05-3415), `--inventory --raid-reset` reported four SAS hard disks in state Ready as `PLANNED` and the run `PASS`. The erase then failed on the first `set jbod` with `command invalid`: PERC 8 controllers (H710, H710P, H810) cannot pass drives to the OS at all, and `/c0 show jbod` answers "Controller does not support JBOD". The configuration read now includes the controller's model, firmware, JBOD support and "Support Drive Crypto Erase" (`/cN show all`, `/cN show jbod`). A controller without JBOD support is left unchanged by the RAID reset, in the inventory too, and its drives are `UNHANDLED` with the reason, also without `--raid-reset`.

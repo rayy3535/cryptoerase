@@ -91,7 +91,7 @@ func (r *runner) reportHiddenDrives(ctx context.Context, rep *Report) {
 			switch {
 			case plan != nil && plan.Skipped != "":
 				r.done(rec, Unhandled, hidden+"; the RAID reset skipped this controller: "+plan.Skipped)
-			case strings.EqualFold(c.JBODSupport, "No"):
+			case noNonRAID(c):
 				r.done(rec, Unhandled, hidden+"; "+noJBODReason(c))
 			case noControllerErase(d):
 				// Even exposed by a RAID reset, nothing here could erase such
@@ -139,4 +139,9 @@ func (r *runner) recordOf(rep *Report, d perc.Drive, slot string) *DriveRecord {
 // controller, only the controller can erase those.
 func noControllerErase(d perc.Drive) bool {
 	return !d.CryptoErase && (strings.EqualFold(strings.TrimSpace(d.Interface), "SAS") || strings.EqualFold(strings.TrimSpace(d.Media), "HDD"))
+}
+
+func noNonRAID(c perc.Controller) bool {
+	no, _ := c.NoNonRAID()
+	return no
 }

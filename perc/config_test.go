@@ -309,7 +309,47 @@ func TestControllerInfoH710P(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := ctrls[0]
-	if c.Model != "PERC H710P Mini" || c.Firmware != "3.131.05-3415" || c.JBODSupport != "No" || c.DriveCryptoErase != "No" || c.JBOD != "" {
+	if c.Model != "PERC H710P Mini" || c.Firmware != "3.131.05-3415" || c.JBODSupport != "" || c.JBODNote != "Controller does not support JBOD" ||
+		c.DriveCryptoErase != "No" || c.JBOD != "" || c.Personality != "" {
 		t.Fatalf("%+v", c)
+	}
+	if no, why := c.NoNonRAID(); !no || !strings.Contains(why, "Support Drive Crypto Erase = No") {
+		t.Fatalf("H710P: %v %q", no, why)
+	}
+
+	// A PERC H755 (FW 5.160.02-3552) answers "show jbod" the same way, but
+	// has a personality: it supports non-RAID drives.
+	f.out["/c0 show all J"] = `{"Controllers":[{"Command Status":{"Controller":0,"Status":"Success","Description":"None"},"Response Data":{` +
+		`"Basics":{"Controller":0,"Model":"PERC H755 Front"},"Version":{"Firmware Version":"5.160.02-3552"},` +
+		`"Supported Adapter Operations":{"Support SecurityonJBOD":"No","Support JBOD Write cache":"No","Support Force Personality Change":"No"},` +
+		`"Capabilities":{"Current Personality":"RAID-Mode"}}}]}`
+	ctrls, err = f.lister().Controllers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := ctrls[0]; c.Personality != "RAID-Mode" || c.JBODNote == "" {
+		t.Fatalf("H755: %+v", c)
+	} else if no, _ := c.NoNonRAID(); no {
+		t.Fatal("H755 taken for a controller without non-RAID drives")
+	}
+}
+
+func TestNoNonRAID(t *testing.T) {
+	const note = "Controller does not support JBOD"
+	for _, tc := range []struct {
+		c    Controller
+		want bool
+	}{
+		{Controller{JBODSupport: "No", Personality: "RAID-Mode"}, true},
+		{Controller{JBODNote: note, DriveCryptoErase: "No"}, true},
+		{Controller{JBODNote: note, DriveCryptoErase: "No", Personality: "RAID-Mode"}, false},
+		{Controller{JBODNote: note, DriveCryptoErase: "No", JBODSupport: "Yes"}, false},
+		{Controller{JBODNote: note}, false},
+		{Controller{DriveCryptoErase: "No"}, false},
+		{Controller{}, false},
+	} {
+		if got, why := tc.c.NoNonRAID(); got != tc.want || got == (why == "") {
+			t.Errorf("%+v: %v %q", tc.c, got, why)
+		}
 	}
 }

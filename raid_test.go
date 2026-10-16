@@ -524,10 +524,10 @@ func TestRAIDResetNoJBODSupport(t *testing.T) {
 			t.Fatalf("%s: controller changed: %v", mode, f.calls)
 		}
 		rr := rep.RAIDReset[0]
-		if !strings.Contains(rr.Skipped, "the controller (PERC H710P Mini) does not support non-RAID (JBOD) drives") {
+		if !strings.Contains(rr.Skipped, "the controller (PERC H710P Mini) has no non-RAID (JBOD) mode") {
 			t.Fatalf("%s: %+v", mode, rr)
 		}
-		d := wantResult(t, rep, "s0", Unhandled, "the RAID reset skipped this controller: the controller (PERC H710P Mini) does not support non-RAID")
+		d := wantResult(t, rep, "s0", Unhandled, "the RAID reset skipped this controller: the controller (PERC H710P Mini) has no non-RAID (JBOD) mode")
 		if d.Planned != "" || rep.Result != "INCOMPLETE" {
 			t.Errorf("%s: planned %q, result %s", mode, d.Planned, rep.Result)
 		}
@@ -559,12 +559,36 @@ func TestHiddenSASWithoutControllerErase(t *testing.T) {
 // support are not told to rerun with it: it would not help.
 func TestHiddenDrivesNoJBODWithoutReset(t *testing.T) {
 	h, f := jbodOffHost(t)
-	f.ctrls[0].JBOD, f.ctrls[0].JBODSupport, f.ctrls[0].DriveCryptoErase, f.ctrls[0].Model = "", "No", "No", "PERC H710P Mini"
+	// What a PERC H710P reports.
+	f.ctrls[0].JBOD, f.ctrls[0].JBODNote, f.ctrls[0].DriveCryptoErase, f.ctrls[0].Model = "", "Controller does not support JBOD", "No", "PERC H710P Mini"
 	o := raidOptions(h, f, ModeInventory)
 	o.RAIDReset = false
 	rep := h.run(o)
-	d := wantResult(t, rep, "s0", Unhandled, "the controller (PERC H710P Mini) does not support non-RAID (JBOD) drives")
+	d := wantResult(t, rep, "s0", Unhandled, "the controller (PERC H710P Mini) has no non-RAID (JBOD) mode")
 	if !strings.Contains(d.Reason, "Support Drive Crypto Erase = No") || strings.Contains(d.Reason, "rerun with --raid-reset") {
 		t.Fatalf("%q", d.Reason)
 	}
+}
+
+// A PERC H755 answers "show jbod" like an H710P, but has a personality and
+// supports non-RAID drives: the reset goes ahead (seen on a PowerEdge with
+// FW 52.16.1-4158).
+func TestRAIDResetH755(t *testing.T) {
+	h, f := raidHost(t)
+	f.ctrls[0].JBOD, f.ctrls[0].JBODNote, f.ctrls[0].Personality, f.ctrls[0].Model = "", "Controller does not support JBOD", "RAID-Mode", "PERC H755 Front"
+	rep := h.run(raidOptions(h, f, ModeErase))
+	want := "perccli64 /c0/v0 delete force|perccli64 /c0/e64/s0 set jbod|perccli64 /c0/e64/s1 set jbod"
+	if rr := rep.RAIDReset[0]; rr.Skipped != "" || strings.Join(f.calls, "|") != want {
+		t.Fatalf("%+v calls %v", rr, f.calls)
+	}
+	wantResult(t, rep, "sdb", Pass, "")
+}
+
+// A controller that refuses "set jbod" as an invalid command, without
+// having said so beforehand: the reason explains what that may mean.
+func TestRAIDResetSetJBODRefused(t *testing.T) {
+	h, f := raidHost(t)
+	f.fail["perccli64 /c0/e64/s0 set jbod"] = errors.New(`perccli64 /c0/e64/s0 set jbod: Failure Set Drive JBOD Failed. [{"ErrMsg":"command invalid "}]`)
+	rep := h.run(raidOptions(h, f, ModeErase))
+	wantResult(t, rep, "s0", Fail, "the controller may have no non-RAID mode; drives not set to non-RAID stay unconfigured and still hold their data")
 }
