@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.1 (2026-10-20)
+
+- **`--raid-reset` on a server without a RAID controller.** On a server whose only drive was on a motherboard SATA port (ahci), with perccli64 and storcli64 installed, `--raid-reset` added an `UNHANDLED` `RAID controller` record: "drives behind the controller that the OS does not see could not be listed … No Controller found". A run of drives that all passed would have ended `INCOMPLETE`. When every installed CLI answers `show ctrlcount` with 0 and no megaraid_sas controller is loaded, there is now no such record, and the RAID reset is skipped ("no PERC/MegaRAID controller"). With a megaraid_sas controller loaded, a CLI that sees nothing still leaves the run `INCOMPLETE`, as drives could be hidden behind it. `perc.ErrNoController` marks the case in the errors of `List` and `Controllers`.
+- A CLI installed twice (a copy in `$PATH` and one under `/opt/MegaRAID/`) was named twice in the "no controller seen by …" hint; it is named once.
+
 ## v0.8.0 (2026-10-16)
 
 - **SAS drives on an HBA.** SAS drives the OS sees directly were `UNHANDLED`: "not a directly attached ATA device … SAS or other controller". Seen: three Seagate Nytro XS1920LE70134 SAS SSDs on a Dell HBA355i (mpt3sas). They are now erased with SCSI SANITIZE, service action CRYPTOGRAPHIC ERASE, sent through SG_IO by the new `scsi` code, with no outside tool:

@@ -4,6 +4,7 @@ package cryptoerase
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -123,4 +124,45 @@ func TestHiddenDrivesNotLookedFor(t *testing.T) {
 	if len(rep.Drives) != 1 {
 		t.Fatalf("drives %d", len(rep.Drives))
 	}
+}
+
+// --raid-reset on a server with only motherboard SATA ports, with perccli64
+// and storcli64 installed but no controller for them to see: nothing is
+// reported for a controller, and the run passes. With a megaraid_sas
+// controller loaded, a CLI that sees nothing still leaves the run
+// incomplete: drives could be hidden behind it.
+func TestRAIDResetNoControllerSeen(t *testing.T) {
+	noCtrl := fmt.Errorf("perccli64: list physical drives: no drives listed; no controller seen by perccli64, storcli64 (show ctrlcount: 0): %w", perc.ErrNoController)
+	ahciHost := func(t *testing.T) (*testHost, *fakeRAID) {
+		h := newHost(t)
+		write(t, filepath.Join(h.sys, "class/scsi_host/host2/proc_name"), "ahci\n")
+		h.addSCSI("sda", scsiSpec{vendor: "ATA", driver: "ahci", ata: &fakeATADisk{words: ataWords("SAMSUNG MZ7LH960HAJR-00005", "EXAMPLESATA0001", "F", true, false)}})
+		return h, &fakeRAID{h: h, ctrlErr: noCtrl, fail: map[string]error{}}
+	}
+	t.Run("no megaraid_sas controller", func(t *testing.T) {
+		h, f := ahciHost(t)
+		rep := h.run(raidOptions(h, f, ModeErase))
+		if len(rep.Drives) != 1 || rep.Result != "PASS" || rep.ExitCode() != 0 {
+			t.Fatalf("drives %d result %s", len(rep.Drives), rep.Result)
+		}
+		wantResult(t, rep, "sda", Pass, "")
+		if rr := rep.RAIDReset[0]; rr.Error != "" || !strings.Contains(rr.Skipped, "no installed CLI sees one") {
+			t.Fatalf("%+v", rr)
+		}
+	})
+	t.Run("megaraid_sas controller loaded", func(t *testing.T) {
+		h, f := ahciHost(t)
+		write(t, filepath.Join(h.sys, "class/scsi_host/host9/proc_name"), "megaraid_sas\n")
+		rep := h.run(raidOptions(h, f, ModeErase))
+		wantResult(t, rep, "RAID controller host9", Unhandled, "could not be listed")
+		if rr := rep.RAIDReset[0]; !strings.Contains(rr.Error, "no controller seen") || rep.ExitCode() != 2 {
+			t.Fatalf("%+v exit %d", rr, rep.ExitCode())
+		}
+	})
+	t.Run("other listing errors", func(t *testing.T) {
+		h, f := ahciHost(t)
+		f.ctrlErr = errors.New("perccli64: exit status 1")
+		rep := h.run(raidOptions(h, f, ModeErase))
+		wantResult(t, rep, "RAID controller", Unhandled, "exit status 1")
+	})
 }

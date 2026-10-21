@@ -107,7 +107,7 @@ func (l *Lister) List(ctx context.Context) ([]Drive, error) {
 	if lastErr == nil {
 		lastErr = fmt.Errorf("%s returned no drives", name)
 	}
-	return nil, fmt.Errorf("%w%s", lastErr, l.noControllerHint(ctx))
+	return nil, l.withNoController(ctx, lastErr)
 }
 
 func runCommand(ctx context.Context, path string, args ...string) ([]byte, error) {
