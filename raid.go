@@ -4,6 +4,7 @@ package cryptoerase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,6 +62,8 @@ func (r *runner) raidReset(ctx context.Context) []*RAIDReset {
 	}
 	ctrls, err := rs.Controllers(ctx)
 	switch {
+	case err != nil && errors.Is(err, perc.ErrNoController) && r.megaraidHost() == "":
+		return []*RAIDReset{{Controller: -1, Skipped: "no PERC/MegaRAID controller: no installed CLI sees one (show ctrlcount: 0), and no megaraid_sas controller is loaded"}}
 	case err != nil:
 		return []*RAIDReset{{Controller: -1, Error: fmt.Sprintf("read controller configuration: %v", err)}}
 	case len(ctrls) == 0:

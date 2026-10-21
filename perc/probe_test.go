@@ -78,7 +78,7 @@ func TestControllersNoControllerSeen(t *testing.T) {
 	_, err := f.lister().Controllers(context.Background())
 	want := "perccli64: list physical drives: /call/eall/sall show all: no drives listed (Success: None)\n" +
 		"/call/sall show all: no drives listed (Success: None); no controller seen by perccli64 (show ctrlcount: 0). " + NoControllerHint
-	if err == nil || err.Error() != want || strings.Contains(err.Error(), "%!") {
+	if err == nil || err.Error() != want || strings.Contains(err.Error(), "%!") || !errors.Is(err, ErrNoController) {
 		t.Fatalf("%v", err)
 	}
 	if _, err := f.lister().List(context.Background()); err == nil || !strings.Contains(err.Error(), "returned no drives; no controller seen by perccli64") {
@@ -99,21 +99,63 @@ func TestControllersNoCLISeesController(t *testing.T) {
 }
 
 // An explicit path is not probed for the choice, and the hint names only it.
-func TestNoControllerHintExplicitPath(t *testing.T) {
+func TestNoControllerExplicitPath(t *testing.T) {
 	l := &Lister{Path: "/srv/storcli64", Exec: func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		return []byte(ctrlCount("0")), nil
 	}}
-	if h := l.noControllerHint(context.Background()); !strings.Contains(h, "no controller seen by storcli64 (") {
-		t.Fatalf("%q", h)
+	if h, none := l.noController(context.Background()); !strings.Contains(h, "no controller seen by storcli64 (") || !none {
+		t.Fatalf("%q %v", h, none)
 	}
 	// A CLI that cannot count adds nothing.
 	l = &Lister{Path: "/srv/storcli64", Exec: func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("exit status 1") }}
-	if h := l.noControllerHint(context.Background()); h != "" {
-		t.Fatalf("%q", h)
+	if h, none := l.noController(context.Background()); h != "" || none {
+		t.Fatalf("%q %v", h, none)
 	}
-	none := &Lister{LookPath: func(string) (string, error) { return "", errors.New("no") }}
-	if h := none.noControllerHint(context.Background()); h != "" {
-		t.Fatalf("%q", h)
+	nocli := &Lister{LookPath: func(string) (string, error) { return "", errors.New("no") }}
+	if h, none := nocli.noController(context.Background()); h != "" || none {
+		t.Fatalf("%q %v", h, none)
+	}
+}
+
+// Each CLI installed twice (a copy in $PATH and one in its install
+// directory), none seeing a controller: each is named once, and the error is
+// marked ErrNoController.
+func TestNoControllerDuplicateCLIs(t *testing.T) {
+	paths := map[string]string{
+		"perccli64": "/usr/sbin/perccli64", "storcli64": "/usr/sbin/storcli64",
+		"/opt/MegaRAID/perccli/perccli64": "/opt/MegaRAID/perccli/perccli64",
+		"/opt/MegaRAID/storcli/storcli64": "/opt/MegaRAID/storcli/storcli64",
+	}
+	l := &Lister{
+		LookPath: func(n string) (string, error) {
+			if p, ok := paths[n]; ok {
+				return p, nil
+			}
+			return "", errors.New("not found")
+		},
+		Exec: func(context.Context, string, ...string) ([]byte, error) {
+			return []byte(`{"Controllers":[{"Command Status":{"Status":"Failure","Description":"No Controller found"}}]}`), nil
+		},
+	}
+	_, err := l.Controllers(context.Background())
+	if err == nil || !errors.Is(err, ErrNoController) || !strings.Contains(err.Error(), "no controller seen by perccli64, storcli64 (show ctrlcount: 0). check the kernel log") {
+		t.Fatalf("%v", err)
+	}
+	if _, err := l.List(context.Background()); !errors.Is(err, ErrNoController) {
+		t.Fatalf("List: %v", err)
+	}
+}
+
+// A CLI whose count cannot be read might see a controller: the error keeps
+// the hint for the CLI in use but is not marked ErrNoController.
+func TestNoControllerOneProbeFails(t *testing.T) {
+	m := &multiCLI{out: map[string]map[string]string{
+		"perccli64": {"show ctrlcount J": ctrlCount("0")},
+		"storcli64": {"show ctrlcount J": "garbage"},
+	}}
+	_, err := m.lister().Controllers(context.Background())
+	if err == nil || errors.Is(err, ErrNoController) || !strings.Contains(err.Error(), "no controller seen by perccli64 (show ctrlcount: 0)") {
+		t.Fatalf("%v", err)
 	}
 }
 

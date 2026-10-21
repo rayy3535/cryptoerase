@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -138,33 +139,69 @@ func ParseControllerCount(out []byte) (int, error) {
 	return 0, errors.New("no controller count in the output")
 }
 
-// noControllerHint returns an explanation to append to an error when the CLI
-// in use sees no controller, else "".
-func (l *Lister) noControllerHint(ctx context.Context) string {
+// ErrNoController is wrapped in the errors of List and Controllers when no
+// installed CLI sees a controller: each one answered "show ctrlcount" with 0.
+var ErrNoController = errors.New("no controller found")
+
+// noControllerError marks err with ErrNoController, keeping its message.
+type noControllerError struct{ err error }
+
+func (e *noControllerError) Error() string   { return e.err.Error() }
+func (e *noControllerError) Unwrap() []error { return []error{e.err, ErrNoController} }
+
+// withNoController appends an explanation to err when the CLI in use sees no
+// controller, and marks it with ErrNoController when no installed CLI does.
+func (l *Lister) withNoController(ctx context.Context, err error) error {
+	hint, none := l.noController(ctx)
+	if hint == "" {
+		return err
+	}
+	err = fmt.Errorf("%w%s", err, hint)
+	if none {
+		return &noControllerError{err}
+	}
+	return err
+}
+
+// noController returns an explanation to append to an error when the CLI in
+// use sees no controller, else "", and whether every installed CLI (or the
+// explicit Path) answered "show ctrlcount" with 0.
+func (l *Lister) noController(ctx context.Context) (hint string, none bool) {
 	path, name := l.tool(ctx)
 	if path == "" {
-		return ""
+		return "", false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if r := l.countLocked(ctx, cli{path, name}); r.err != nil || r.count > 0 {
-		return ""
+		return "", false
 	}
-	none := []string{name}
+	names := []string{name}
 	storcli := strings.HasPrefix(name, "storcli")
+	none = true
 	if l.Path == "" {
 		for _, c := range l.installed() {
-			if r := l.countLocked(ctx, c); c.path != path && r.err == nil && r.count == 0 {
-				none = append(none, c.name)
-				storcli = storcli || strings.HasPrefix(c.name, "storcli")
+			if c.path == path {
+				continue
 			}
+			r := l.countLocked(ctx, c)
+			if r.err != nil || r.count != 0 {
+				none = false
+				continue
+			}
+			// The same CLI may be installed twice (a copy in $PATH and one
+			// in its install directory); it is named once.
+			if !slices.Contains(names, c.name) {
+				names = append(names, c.name)
+			}
+			storcli = storcli || strings.HasPrefix(c.name, "storcli")
 		}
 	}
-	hint := NoControllerHint
+	hint = NoControllerHint
 	if storcli {
 		hint = "check the kernel log (dmesg | grep -i megaraid) for the controller's state"
 	}
-	return fmt.Sprintf("; no controller seen by %s (show ctrlcount: 0). %s", strings.Join(none, ", "), hint)
+	return fmt.Sprintf("; no controller seen by %s (show ctrlcount: 0). %s", strings.Join(names, ", "), hint), none
 }
 
 // statusNote returns the CLI's own status from its JSON output, as

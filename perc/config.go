@@ -133,7 +133,7 @@ func (l *Lister) Controllers(ctx context.Context) ([]Controller, error) {
 		}
 	}
 	if pdOut == nil {
-		return nil, fmt.Errorf("%s: list physical drives: %w%s", name, errors.Join(pdErrs...), l.noControllerHint(ctx))
+		return nil, l.withNoController(ctx, fmt.Errorf("%s: list physical drives: %w", name, errors.Join(pdErrs...)))
 	}
 	vdOut, err := l.exec(ctx, path, "/call/vall", "show", "all", "J")
 	if err != nil && len(vdOut) == 0 {

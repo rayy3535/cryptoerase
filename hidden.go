@@ -4,6 +4,7 @@ package cryptoerase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,6 +51,11 @@ func (r *runner) reportHiddenDrives(ctx context.Context, rep *Report) {
 	}
 	now := time.Now().UTC()
 	ctrls, err := cl.Controllers(ctx)
+	if err != nil && host == "" && errors.Is(err, perc.ErrNoController) {
+		// --raid-reset on a server with no megaraid_sas controller, where
+		// no installed CLI sees a controller either: nothing is behind one.
+		return
+	}
 	if err != nil {
 		rec := &DriveRecord{Device: strings.TrimSpace("RAID controller " + host), StartedAt: now, PERC: &PERCInfo{Error: err.Error()}}
 		r.done(rec, Unhandled, fmt.Sprintf("drives behind the controller that the OS does not see could not be listed: %v", err))
