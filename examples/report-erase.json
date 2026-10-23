@@ -11,7 +11,7 @@
   },
   "tool": {
     "name": "cryptoerase",
-    "version": "0.8.1",
+    "version": "0.8.2",
     "go_version": "go1.27.1",
     "nvme_transport": "Linux NVME_IOCTL_ADMIN_CMD",
     "ata_backend": "hdparm v9.65"
@@ -21,7 +21,7 @@
     "samples": 16,
     "firmware_rules": [
       "P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV1DP ; VDV1DP25 ; Dell DSA-2022-203 (INTEL-SA-00535 / SOLIDIGM-SA-00563)",
-      "P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV10 ; VDV10184 ; INTEL-SA-00535 (fixed VDV10182), SOLIDIGM-SA-00563 (VDV10184)"
+      "P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV10 ; VDV10182 ; INTEL-SA-00535 (CVE-2021-0148)"
     ]
   },
   "started_at": "2026-01-01T00:00:00Z",

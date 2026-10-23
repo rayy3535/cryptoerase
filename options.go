@@ -47,7 +47,7 @@ import (
 )
 
 // Version of the library and CLI.
-const Version = "0.8.1"
+const Version = "0.8.2"
 
 // Mode selects what Run does.
 type Mode int
