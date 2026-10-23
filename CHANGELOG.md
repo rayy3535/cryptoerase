@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.2 (2026-10-22)
+
+- **Intel P4510/P4610 firmware floor lowered from VDV10184 to VDV10182.** A P4510 (SSDPE2KX010T8) on VDV10183 was `FAIL`: "firmware VDV10183 is below VDV10184". The floor now follows INTEL-SA-00535 (CVE-2021-0148, fixed in VDV10182) alone. For unfixed drives Intel's workaround is a block erase, so a cryptographic erase alone is not enough on them. SOLIDIGM-SA-00563 (VDV10184) no longer sets the floor: its CVEs are denial of service, privilege escalation and attacks that need physical access, and the one about erasing (CVE-2021-33082) is in Sanitize Block Erase, for which the advisory recommends a cryptographic erase. The Dell firmware line (VDV1DP25) is unchanged.
+
 ## v0.8.1 (2026-10-20)
 
 - **`--raid-reset` on a server without a RAID controller.** On a server whose only drive was on a motherboard SATA port (ahci), with perccli64 and storcli64 installed, `--raid-reset` added an `UNHANDLED` `RAID controller` record: "drives behind the controller that the OS does not see could not be listed … No Controller found". A run of drives that all passed would have ended `INCOMPLETE`. When every installed CLI answers `show ctrlcount` with 0 and no megaraid_sas controller is loaded, there is now no such record, and the RAID reset is skipped ("no PERC/MegaRAID controller"). With a megaraid_sas controller loaded, a CLI that sees nothing still leaves the run `INCOMPLETE`, as drives could be hidden behind it. `perc.ErrNoController` marks the case in the errors of `List` and `Controllers`.

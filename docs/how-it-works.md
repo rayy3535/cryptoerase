@@ -139,6 +139,8 @@ Drive models with published erase-related advisories must run fixed firmware. Ol
 | Model | Firmware line | Minimum | Reference |
 |---|---|---|---|
 | Intel / Solidigm DC P4510, P4610 | Dell (`VDV1DP*`) | VDV1DP25 | Dell DSA-2022-203 |
-| Intel / Solidigm DC P4510, P4610 | Intel (`VDV10*`) | VDV10184 | INTEL-SA-00535, SOLIDIGM-SA-00563 |
+| Intel / Solidigm DC P4510, P4610 | Intel (`VDV10*`) | VDV10182 | INTEL-SA-00535 |
+
+INTEL-SA-00535 (CVE-2021-0148): the firmware writes information into a log that a privileged local user can read. For drives without the fix, Intel's workaround is a block erase or a Format NVM User Data Erase, so a cryptographic erase alone is not enough. SOLIDIGM-SA-00563 (fixed in VDV10184) sets no floor here: its CVEs are denial of service, privilege escalation and attacks that need physical access, and the one about erasing (CVE-2021-33082) is in Sanitize Block Erase, for which the advisory recommends a cryptographic erase instead.
 
 `--fw-policy FILE` replaces the table. The format is one rule per line: `model regex ; firmware regex ; minimum ; reference`. Versions are compared like `sort -V`. Pull requests that add rules should cite a public advisory.

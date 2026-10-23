@@ -28,8 +28,13 @@ func (r FirmwareRule) String() string {
 const DefaultFirmwarePolicyText = `
 # Intel / Solidigm DC P4510 and P4610, Dell-branded firmware line
 P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV1DP ; VDV1DP25 ; Dell DSA-2022-203 (INTEL-SA-00535 / SOLIDIGM-SA-00563)
-# Same drives, Intel firmware line
-P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV10  ; VDV10184 ; INTEL-SA-00535 (fixed VDV10182), SOLIDIGM-SA-00563 (VDV10184)
+# Same drives, Intel firmware line. INTEL-SA-00535 (CVE-2021-0148): the
+# firmware writes information into a log; for unfixed drives Intel's
+# workaround is a block erase, so a cryptographic erase alone is not enough.
+# SOLIDIGM-SA-00563 (VDV10184) is not a floor: its one erase-related CVE
+# (CVE-2021-33082) is in Sanitize Block Erase, and its workaround is a
+# cryptographic erase.
+P4510|P4610|SSDPE2KX|SSDPE2KE ; ^VDV10  ; VDV10182 ; INTEL-SA-00535 (CVE-2021-0148)
 `
 
 // DefaultFirmwarePolicy returns the built-in rules.

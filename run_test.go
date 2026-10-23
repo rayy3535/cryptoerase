@@ -261,14 +261,14 @@ func TestFirmwareFloor(t *testing.T) {
 	h := newHost(t)
 	a := h.addNVMe("nvme0", nvmeSpec{fna: 4, model: "Dell Express Flash NVMe P4610 6.4TB SFF", fw: "VDV1DP23"})
 	b := h.addNVMe("nvme1", nvmeSpec{fna: 4, model: "INTEL SSDPE2KE064T8", fw: "VDV10170"})
-	h.addNVMe("nvme2", nvmeSpec{fna: 4, model: "INTEL SSDPE2KE064T8", fw: "VDV10184"})
+	h.addNVMe("nvme2", nvmeSpec{fna: 4, model: "INTEL SSDPE2KE064T8", fw: "VDV10183"})
 	o := h.options(ModeErase)
 	o.AllowFormat = true
 	rep := h.run(o)
 	if d := drive(t, rep, "nvme0"); d.Result != Fail || !strings.Contains(d.Reason, "VDV1DP25") || a.called("format") != 0 {
 		t.Errorf("Dell line: %s %s", d.Result, d.Reason)
 	}
-	if d := drive(t, rep, "nvme1"); d.Result != Fail || !strings.Contains(d.Reason, "VDV10184") || b.called("format") != 0 {
+	if d := drive(t, rep, "nvme1"); d.Result != Fail || !strings.Contains(d.Reason, "below VDV10182 (INTEL-SA-00535") || b.called("format") != 0 {
 		t.Errorf("Intel line: %s %s", d.Result, d.Reason)
 	}
 	if d := drive(t, rep, "nvme2"); d.Result != Pass {
@@ -446,7 +446,9 @@ func TestCheckFirmware(t *testing.T) {
 	cases := []struct{ model, fw, want string }{
 		{"Dell Express Flash NVMe P4610 6.4TB SFF", "VDV1DP24", "fail"},
 		{"Dell Express Flash NVMe P4610 6.4TB SFF", "VDV1DP25", "pass"},
-		{"INTEL SSDPE2KE064T8", "VDV10182", "fail"},
+		{"INTEL SSDPE2KE064T8", "VDV10181", "fail"},
+		{"INTEL SSDPE2KE064T8", "VDV10182", "pass"},
+		{"INTEL SSDPE2KX010T8", "VDV10183", "pass"}, // below SOLIDIGM-SA-00563's VDV10184, which sets no floor
 		{"INTEL SSDPE2KE064T8", "VDV10190", "pass"},
 		{"SAMSUNG MZ7LH960HAJR-00005", "HXT7404Q", "no_rule"},
 	}
